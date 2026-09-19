@@ -1,5 +1,6 @@
 node_modules/
 public/
+!web/public/
 dist/
 .dev.vars
 .wrangler/
