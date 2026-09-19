@@ -63,8 +63,8 @@ const app = new Hono<{ Bindings: AppEnv; Variables: Vars }>();
 
 app.use("*", logger());
 
-// Block the app from mobile browsers during the responsive pass. Translated
-// in fix/mobile-share-access (PR #2), which owns this block.
+// Block rute dari perangkat mobile selama perbaikan responsif. HTML mandiri — tanpa
+// ketergantungan aset, admin tetap lolos supaya bisa memeriksa.
 const MOBILE_UA = /(Mobi|Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini)/i;
 app.use("*", async (c, next) => {
   const ua = c.req.header("user-agent") ?? "";
