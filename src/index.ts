@@ -135,12 +135,12 @@ function secureOrigin(url: string): boolean {
   return new URL(url).protocol === "https:";
 }
 
-function cookieOpts(c: AppContext) {
+function cookieOpts(c: AppContext, sameSite: "Lax" | "Strict" = "Strict") {
   return {
     maxAge: SESSION_MAX_AGE,
     httpOnly: true,
     secure: secureOrigin(c.req.url),
-    sameSite: "Lax",
+    sameSite,
   } as const;
 }
 
@@ -205,7 +205,7 @@ app.get("/auth/login", (c) => {
   const headers = new Headers({ location: url, "cache-control": "no-store" });
   headers.append(
     "set-cookie",
-    serializeCookie(STATE_COOKIE, state, { ...cookieOpts(c), maxAge: 600 }),
+    serializeCookie(STATE_COOKIE, state, { ...cookieOpts(c, "Lax"), maxAge: 600 }),
   );
   return new Response(null, { status: 302, headers });
 });
@@ -219,7 +219,7 @@ async function finishLogin(c: AppContext): Promise<Response> {
   const headers = new Headers({ location: "/", "cache-control": "no-store" });
   headers.append(
     "set-cookie",
-    serializeCookie(STATE_COOKIE, "", { ...cookieOpts(c), maxAge: 0 }),
+    serializeCookie(STATE_COOKIE, "", { ...cookieOpts(c, "Lax"), maxAge: 0 }),
   );
 
   if (!code || !state || state !== cookies[STATE_COOKIE]) {

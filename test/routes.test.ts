@@ -217,6 +217,16 @@ describe("session", () => {
       expect.any(Number),
     );
   });
+
+  it("sets the session cookie with SameSite=Strict", async () => {
+    const res = await get("/auth/guest");
+    expect(res.headers.get("set-cookie")).toContain("SameSite=Strict");
+  });
+
+  it("keeps the oauth state cookie SameSite=Lax", async () => {
+    const res = await get("/auth/login");
+    expect(res.headers.get("set-cookie")).toContain("SameSite=Lax");
+  });
 });
 
 describe("maintenance mode", () => {
