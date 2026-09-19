@@ -61,6 +61,7 @@ export default function Browse({
 
   const changeView = (v: View) => { setView(v); saveView(v); };
   const [shareTarget, setShareTarget] = useState<DriveFile | null>(null);
+  const [showUpload, setShowUpload] = useState(false);
   const [zipping, setZipping] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -296,6 +297,15 @@ export default function Browse({
         >
           {zipping ? "Menggabung…" : "Unduh .zip"}
         </button>
+        {me?.admin ? (
+          <button
+            className="btn"
+            onClick={() => setShowUpload(true)}
+            title="Unggah file ke folder tertentu"
+          >
+            Unggah
+          </button>
+        ) : null}
         <select className="select" value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Urutkan">
           <option value="name">Nama</option>
           <option value="date">Terbaru</option>
@@ -332,6 +342,14 @@ export default function Browse({
       )}
 
       {shareTarget ? <ShareDialog file={shareTarget} onClose={() => setShareTarget(null)} /> : null}
+      {showUpload ? (
+        <UploadModal
+          initialFolderId={folderId}
+          crumbs={crumbs}
+          onClose={() => setShowUpload(false)}
+          onDone={() => { setShowUpload(false); void load(); }}
+        />
+      ) : null}
       {showHelp ? <ShortcutHelp onClose={() => setShowHelp(false)} /> : null}
     </>
   );
@@ -604,6 +622,134 @@ function ShareDialog({ file, onClose }: { file: DriveFile; onClose: () => void }
           </div>
         </form>
       )}
+    </Modal>
+  );
+}
+
+const UPLOAD_MAX = 95 * 1024 * 1024;
+
+function UploadModal({
+  initialFolderId,
+  crumbs,
+  onClose,
+  onDone,
+}: {
+  initialFolderId: string;
+  crumbs: Crumb[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const { push } = useToast();
+  const [dirId, setDirId] = useState(initialFolderId);
+  const [path, setPath] = useState<Crumb[]>(crumbs);
+  const [subs, setSubs] = useState<DriveFile[] | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadSubs = useCallback(async (id: string) => {
+    setSubs(null);
+    try {
+      const res = await api.files(id);
+      setSubs(res.files.filter((f) => kindOf(f.mimeType) === "folder").sort((a, b) => a.name.localeCompare(b.name)));
+      setPath(res.crumbs);
+    } catch (e2) {
+      setError(e2 instanceof Error ? e2.message : "Gagal memuat folder.");
+    }
+  }, []);
+
+  useEffect(() => { void loadSubs(dirId); }, [dirId, loadSubs]);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!file || file.size > UPLOAD_MAX) return;
+    setBusy(true);
+    setError(null);
+    setProgress(0);
+    try {
+      await api.upload(file, dirId, setProgress);
+      push("ok", `${file.name} berhasil diunggah.`);
+      onDone();
+    } catch (e2) {
+      setError(e2 instanceof Error ? e2.message : "Upload gagal.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const here = path.length > 0 ? path[path.length - 1].name : "Arsip";
+  const tooBig = file !== null && file.size > UPLOAD_MAX;
+
+  return (
+    <Modal title="Unggah file" sub={`Tujuan: ${here}`} onClose={onClose}>
+      <form onSubmit={submit}>
+        {error ? <Notice kind="error">{error}</Notice> : null}
+        <nav className="crumbs" aria-label="Folder tujuan">
+          {path.map((c, i) => (
+            <span key={c.id} style={{ display: "contents" }}>
+              {i > 0 ? <span className="sep" aria-hidden="true">/</span> : null}
+              {i === path.length - 1 ? (
+                <span className="here">{c.name}</span>
+              ) : (
+                <button type="button" className="crumbbtn" onClick={() => setDirId(c.id)}>{c.name}</button>
+              )}
+            </span>
+          ))}
+        </nav>
+        {subs === null ? (
+          <p className="muted">Memuat folder…</p>
+        ) : subs.length === 0 ? (
+          <p className="muted">Tidak ada subfolder di lokasi ini.</p>
+        ) : (
+          <div className="filelist" role="list">
+            {subs.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                className="folderrow"
+                onClick={() => setDirId(f.id)}
+                title={`Pilih ${f.name}`}
+              >
+                <FileBadge mime={f.mimeType} />
+                <span style={{ flex: 1, textAlign: "left" }}>{f.name}</span>
+                <span className="sep" aria-hidden="true">›</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="field">
+          <label htmlFor="up-file">File</label>
+          <input
+            id="up-file"
+            className="input"
+            type="file"
+            onChange={(e) => { setFile(e.target.files?.[0] ?? null); setProgress(null); }}
+          />
+        </div>
+        {tooBig ? (
+          <Notice kind="error">File lebih dari 95 MB tidak bisa diunggah lewat aplikasi ini.</Notice>
+        ) : file ? (
+          <p className="muted">{formatBytes(file.size)} · akan diunggah ke “{here}”</p>
+        ) : null}
+        {progress !== null ? (
+          <div
+            className="progressbar"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(progress * 100)}
+          >
+            <div style={{ width: `${Math.round(progress * 100)}%` }} />
+          </div>
+        ) : null}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn primary" disabled={!file || tooBig || busy}>
+            {busy ? "Mengunggah…" : "Unggah"}
+          </button>
+          <button type="button" className="btn ghost" onClick={onClose} disabled={busy}>Batal</button>
+        </div>
+      </form>
     </Modal>
   );
 }

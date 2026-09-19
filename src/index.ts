@@ -55,6 +55,7 @@ import { isShareExpired, newShareId, type ShareClaims } from "./share";
 import { requireUnlocked, unlockCookieName } from "./guard";
 import { hashUnlockToken } from "./unlock";
 import { checkRate } from "./rate";
+import { MAX_UPLOAD_BYTES, uploadToDrive } from "./upload";
 
 type Vars = { session: Session };
 type AppContext = Context<{ Bindings: AppEnv; Variables: Vars }>;
@@ -492,6 +493,48 @@ app.post("/api/share/revoke", requireAdmin, async (c) => {
     });
   }
   return c.json({ ok });
+});
+
+// Admin: upload file ke folder Drive (melalui worker, maks 95 MiB).
+app.post("/api/upload", requireAdmin, async (c) => {
+  const folderId = c.req.query("folder") || c.env.ROOT_FOLDER_ID;
+
+  const declared = Number(c.req.header("content-length") ?? "0");
+  if (Number.isFinite(declared) && declared > MAX_UPLOAD_BYTES) {
+    throw new HttpError(413, `File terlalu besar (maks ${MAX_UPLOAD_BYTES / (1024 * 1024)} MB).`);
+  }
+
+  await requireUnlocked(c.env, folderId, parseCookies(c.req.header("cookie") ?? null));
+
+  const target = await getMeta(c.env, folderId);
+  if (!isFolder(target)) throw new HttpError(400, "Tujuan upload harus folder.");
+
+  const form = await c.req.formData();
+  const file = form.get("file");
+  if (!(file instanceof File)) throw new HttpError(400, "Field 'file' diperlukan.");
+  if (file.size === 0) throw new HttpError(400, "File kosong.");
+  if (file.size > MAX_UPLOAD_BYTES) {
+    throw new HttpError(413, `File terlalu besar (maks ${MAX_UPLOAD_BYTES / (1024 * 1024)} MB).`);
+  }
+
+  const uploaded = await uploadToDrive(
+    c.env,
+    file.name,
+    file.type || "application/octet-stream",
+    folderId,
+    file.size,
+    file.stream(),
+  );
+
+  if (c.env.CACHE) await c.env.CACHE.delete(`list:${folderId}`);
+  await logActivity(c.env.DB, {
+    actor: c.get("session").email,
+    action: "upload",
+    file_id: uploaded.id,
+    detail: folderId,
+  });
+
+  return c.json({ file: uploaded });
 });
 
 async function resolveShare(c: AppContext, token: string) {
