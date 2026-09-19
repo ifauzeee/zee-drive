@@ -272,6 +272,15 @@ describe("activity logging on file access", () => {
       expect.objectContaining({ actor: "share:s1", action: "share.download", file_id: "F1" }),
     );
   });
+
+  it("does not log partial-range previews", async () => {
+    vi.mocked(drive.proxyFile).mockResolvedValueOnce(new Response("bytes", { status: 206 }));
+    const res = await get("/p/F1", {}, {
+      headers: { cookie: await cookieFor(ADMIN_DB, "Admin"), range: "bytes=0-99" },
+    });
+    expect(res.status).toBe(206);
+    expect(logActivity).not.toHaveBeenCalled();
+  });
 });
 
 describe("mobile access", () => {
