@@ -13,6 +13,39 @@ export type FolderPasswordRow = {
 
 export type ActivityRow = Activity;
 
+export type SessionRow = {
+  jti: string;
+  email: string;
+  created_at: number;
+  expires_at: number;
+  revoked: number;
+};
+
+export async function createSession(
+  db: D1Database,
+  jti: string,
+  email: string,
+  maxAgeSeconds: number,
+): Promise<void> {
+  const now = Math.floor(Date.now() / 1000);
+  await db
+    .prepare(`INSERT INTO sessions (jti, email, created_at, expires_at, revoked) VALUES (?, ?, ?, ?, 0)`)
+    .bind(jti, email, now, now + maxAgeSeconds)
+    .run();
+}
+
+export async function getSession(db: D1Database, jti: string): Promise<SessionRow | null> {
+  return db.prepare(`SELECT * FROM sessions WHERE jti = ?`).bind(jti).first<SessionRow>();
+}
+
+export async function revokeSession(db: D1Database, jti: string): Promise<boolean> {
+  const result = await db
+    .prepare(`UPDATE sessions SET revoked = 1 WHERE jti = ? AND revoked = 0`)
+    .bind(jti)
+    .run();
+  return (result.meta.changes ?? 0) > 0;
+}
+
 export async function createShareLink(
   db: D1Database,
   row: Omit<ShareLinkRow, "uses" | "revoked">,
@@ -41,8 +74,13 @@ export async function getShareLink(db: D1Database, id: string): Promise<ShareLin
 }
 
 export async function touchShareLink(db: D1Database, id: string): Promise<number> {
+  // Atomic: the use increment is also bounded by max_uses/revoked at the SQL
+  // level, so concurrent requests cannot overshoot (check-then-add is no TOCTOU).
   const result = await db
-    .prepare(`UPDATE share_links SET uses = uses + 1 WHERE id = ?`)
+    .prepare(
+      `UPDATE share_links SET uses = uses + 1
+       WHERE id = ? AND revoked = 0 AND (max_uses IS NULL OR uses < max_uses)`,
+    )
     .bind(id)
     .run();
   return result.meta.changes ?? 0;
@@ -161,6 +199,15 @@ export async function pruneShareLinks(db: D1Database): Promise<number> {
           OR (expires_at IS NOT NULL AND expires_at < ?)
           OR (max_uses IS NOT NULL AND uses >= max_uses)`,
     )
+    .bind(Math.floor(Date.now() / 1000))
+    .run();
+  return result.meta.changes ?? 0;
+}
+
+/** Cron maintenance: drop semua sesi yang sudah dicabut atau kedaluwarsa. */
+export async function pruneSessions(db: D1Database): Promise<number> {
+  const result = await db
+    .prepare(`DELETE FROM sessions WHERE revoked = 1 OR expires_at < ?`)
     .bind(Math.floor(Date.now() / 1000))
     .run();
   return result.meta.changes ?? 0;

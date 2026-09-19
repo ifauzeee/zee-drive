@@ -8,8 +8,10 @@ import { newSession } from "../src/auth";
 import type { AppEnv } from "../src/env";
 
 vi.mock("../src/db", async () => ({
+  createSession: vi.fn().mockResolvedValue(undefined),
   createShareLink: vi.fn().mockResolvedValue(undefined),
   getFolderPassword: vi.fn().mockResolvedValue(null),
+  getSession: vi.fn(),
   getShareLink: vi.fn().mockResolvedValue(null),
   getSetting: vi.fn().mockResolvedValue(null),
   listActivity: vi.fn().mockResolvedValue([]),
@@ -17,8 +19,10 @@ vi.mock("../src/db", async () => ({
   listShareLinks: vi.fn().mockResolvedValue([]),
   logActivity: vi.fn().mockResolvedValue(undefined),
   pruneActivity: vi.fn().mockResolvedValue(0),
+  pruneSessions: vi.fn().mockResolvedValue(0),
   pruneShareLinks: vi.fn().mockResolvedValue(0),
   removeFolderPassword: vi.fn().mockResolvedValue(false),
+  revokeSession: vi.fn().mockResolvedValue(true),
   revokeShareLink: vi.fn().mockResolvedValue(false),
   setFolderPassword: vi.fn().mockResolvedValue(undefined),
   setSetting: vi.fn().mockResolvedValue(undefined),
@@ -48,6 +52,7 @@ vi.mock("../src/drive", async (importOriginal) => {
 
 const getSetting = vi.mocked(db.getSetting);
 const getFolderPassword = vi.mocked(db.getFolderPassword);
+const getSession = vi.mocked(db.getSession);
 const getShareLink = vi.mocked(db.getShareLink);
 const getAncestors = vi.mocked(drive.getAncestors);
 const getBreadcrumb = vi.mocked(drive.getBreadcrumb);
@@ -111,14 +116,25 @@ function shareRow(id: string, over: Record<string, unknown>) {
   };
 }
 
+// The session actor defaults to admin; tests override it per scenario.
+let activeSessionEmail = ADMIN_DB;
+
 beforeEach(() => {
   vi.clearAllMocks();
   getSetting.mockResolvedValue(null);
   getFolderPassword.mockResolvedValue(null);
+  getSession.mockImplementation(async (_db: D1Database, jti: string) => ({
+    jti,
+    email: activeSessionEmail,
+    created_at: 0,
+    expires_at: Math.floor(Date.now() / 1000) + 86400,
+    revoked: 0,
+  }));
   getBreadcrumb.mockResolvedValue([]);
   getAncestors.mockResolvedValue(["root"]);
   getMeta.mockResolvedValue(DEFAULT_META);
   listFolder.mockResolvedValue([]);
+  activeSessionEmail = ADMIN_DB;
 });
 
 describe("missing env guard", () => {
@@ -151,6 +167,56 @@ describe("session", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ user: null });
   });
+
+  it("recognizes an active session", async () => {
+    const cookie = await cookieFor(ADMIN_DB, "Admin");
+    const res = await get("/api/auth/me", {}, { headers: { cookie } });
+    expect(await res.json()).toMatchObject({
+      user: { email: ADMIN_DB, admin: true },
+    });
+  });
+
+  it("treats a revoked session as logged out", async () => {
+    const cookie = await cookieFor(ADMIN_DB, "Admin");
+    getSession.mockResolvedValueOnce({
+      jti: "x",
+      email: ADMIN_DB,
+      created_at: 0,
+      expires_at: Math.floor(Date.now() / 1000) + 86400,
+      revoked: 1,
+    });
+    const res = await get("/api/auth/me", {}, { headers: { cookie } });
+    expect(await res.json()).toEqual({ user: null });
+  });
+
+  it("rejects sessions missing from the database", async () => {
+    const cookie = await cookieFor(ADMIN_DB, "Admin");
+    getSession.mockResolvedValueOnce(null);
+    const res = await get("/api/files", {}, { headers: { cookie } });
+    expect(res.status).toBe(401);
+  });
+
+  it("revokes the session row on logout", async () => {
+    const cookie = await cookieFor(ADMIN_DB, "Admin");
+    const res = await get("/logout", {}, { headers: { cookie } });
+    expect(res.status).toBe(302);
+    expect(db.revokeSession).toHaveBeenCalled();
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ actor: ADMIN_DB, action: "logout" }),
+    );
+  });
+
+  it("registers a session row for guest logins", async () => {
+    const res = await get("/auth/guest");
+    expect(res.status).toBe(302);
+    expect(db.createSession).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(String),
+      "guest@zee.local",
+      expect.any(Number),
+    );
+  });
 });
 
 describe("maintenance mode", () => {
@@ -172,6 +238,67 @@ describe("maintenance mode", () => {
     const res = await get("/api/files", {}, { headers: { cookie: await cookieFor(ADMIN_DB, "Admin") } });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ files: [], crumbs: [] });
+  });
+});
+
+describe("activity logging on file access", () => {
+  it("logs a download with the session actor", async () => {
+    const cookie = await cookieFor(ADMIN_DB, "Admin");
+    const res = await get("/d/F1", {}, { headers: { cookie } });
+    expect(res.status).toBe(200);
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ actor: ADMIN_DB, action: "download", file_id: "F1" }),
+    );
+  });
+
+  it("logs a preview with action preview", async () => {
+    const cookie = await cookieFor(ADMIN_DB, "Admin");
+    const res = await get("/p/F1", {}, { headers: { cookie } });
+    expect(res.status).toBe(200);
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ actor: ADMIN_DB, action: "preview", file_id: "F1" }),
+    );
+  });
+
+  it("logs public share downloads under share:<sid>", async () => {
+    getShareLink.mockResolvedValueOnce(shareRow("s1", { file_id: "F1" }));
+    const token = await signJson({ sid: "s1", fid: "F1" }, SECRETS.SHARE_SECRET_KEY);
+    const res = await get(`/s/${token}`);
+    expect(res.status).toBe(200);
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ actor: "share:s1", action: "share.download", file_id: "F1" }),
+    );
+  });
+});
+
+describe("mobile access", () => {
+  const MOBILE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15";
+
+  it("blocks the app from mobile browsers", async () => {
+    const res = await get("/api/files", {}, { headers: { "user-agent": MOBILE_UA } });
+    expect(res.status).toBe(503);
+    expect(res.headers.get("content-type")).toContain("text/html");
+  });
+
+  it("lets admin sessions through on mobile", async () => {
+    const res = await get("/api/files", {}, {
+      headers: { "user-agent": MOBILE_UA, cookie: await cookieFor(ADMIN_DB, "Admin") },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("keeps public share API open on mobile", async () => {
+    getShareLink.mockResolvedValueOnce(null);
+    const res = await get("/api/s/abc123", {}, { headers: { "user-agent": MOBILE_UA } });
+    expect(res.status).toBe(410);
+  });
+
+  it("keeps desktop browsers on the app", async () => {
+    const res = await get("/api/config", {}, { headers: { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" } });
+    expect(res.status).toBe(200);
   });
 });
 

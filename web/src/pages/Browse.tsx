@@ -23,7 +23,7 @@ function saveView(v: View) {
   try { localStorage.setItem(VIEW_KEY, v); } catch { /* ignore */ }
 }
 
-// Sarana navigasi prev/next antar file: Browse menitipkan daftar peer ke sessionStorage.
+// Prev/next navigation between files: Browse stashes the peer list in sessionStorage.
 const PEERS_KEY = "zi-peers";
 
 function openFileFromFolder(folderId: string, files: DriveFile[], targetId: string) {
@@ -34,7 +34,7 @@ function openFileFromFolder(folderId: string, files: DriveFile[], targetId: stri
   navigate(`/f/${targetId}`);
 }
 
-// Titip konteks pencarian untuk chip "kembali ke hasil" di FileView.
+// Stash search context for the "back to results" chip in FileView.
 function saveLastSearch(folderId: string, query: string) {
   try { sessionStorage.setItem("zi-last-search", JSON.stringify({ folderId, query })); } catch { /* ignore */ }
 }
@@ -67,13 +67,13 @@ export default function Browse({
   const searchRef = useRef<HTMLInputElement>(null);
   const { push } = useToast();
 
-  // Debounce pencarian global — murah untuk daftar besar.
+  // Debounce global search — cheap enough for large trees.
   useEffect(() => {
     const t = setTimeout(() => setDebounced(query), 300);
     return () => clearTimeout(t);
   }, [query]);
 
-  // Pencarian server diseluruh pohon arsip.
+  // Server-side search across the whole archive tree.
   useEffect(() => {
     const q = debounced.trim();
     if (q.length < 2) {
@@ -90,7 +90,7 @@ export default function Browse({
     return () => { cancelled = true; };
   }, [debounced]);
 
-  // Pintasan keyboard: / fokus pencarian, g toggle tampilan, ? bantuan.
+  // Keyboard shortcuts: / focuses search, g toggles view, ? opens help.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
@@ -112,7 +112,7 @@ export default function Browse({
       setFiles(res.files);
       setCrumbs(res.crumbs);
       onPath?.({ folderId, crumbs: res.crumbs });
-      // View auto: kalau belum ada pilihan tersimpan dan folder didominasi media → galeri.
+      // Auto view: when no explicit choice is saved and media dominates, go grid.
       try {
         if (!localStorage.getItem(VIEW_KEY)) {
           const media = res.files.filter((f) => { const k = kindOf(f.mimeType); return k === "image" || k === "video" || k === "audio"; });
@@ -128,7 +128,7 @@ export default function Browse({
     }
   }, [folderId]);
 
-  // Kembali dari FileView lewat tombol "kembali ke hasil pencarian": pulihkan query lama.
+  // Returning from FileView via the "back to results" button: restore the old query.
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem("zi-last-search");

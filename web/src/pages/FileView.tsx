@@ -16,7 +16,7 @@ export default function FileView({ fileId }: { fileId: string }) {
   const [peers, setPeers] = useState<{ id: string; name: string; mimeType: string }[]>([]);
   const [searchCtx, setSearchCtx] = useState<{ folderId: string; query: string } | null>(null);
 
-  // Konteks dari Browse: daftar peer folder + konteks pencarian yang menuju halaman ini.
+  // Context from Browse: folder peer list + the search context that led here.
   useEffect(() => {
     try {
       const rawP = sessionStorage.getItem("zi-peers");
@@ -31,7 +31,7 @@ export default function FileView({ fileId }: { fileId: string }) {
     } catch { /* ignore */ }
   }, [fileId]);
 
-  // Prev/next antar file se-folder (← / →).
+  // Prev/next between files in the same folder (← / →).
   useEffect(() => {
     if (peers.length < 1) return;
     const onKey = (e: KeyboardEvent) => {
@@ -71,7 +71,7 @@ export default function FileView({ fileId }: { fileId: string }) {
     void load();
   }, [load]);
 
-  // File terkait: saudari di folder yang sama. Gagal diam-diam, jangan ganggu halaman.
+  // Related files: siblings in the same folder. Fail silently, never disturb the page.
   useEffect(() => {
     if (!parent || !file) return;
     api.files(parent)
@@ -110,7 +110,7 @@ export default function FileView({ fileId }: { fileId: string }) {
   const durationSec = file.videoMediaMetadata?.durationMillis ? Math.round(Number(file.videoMediaMetadata.durationMillis) / 1000) : null;
   const media = kind === "video" || kind === "audio" || kind === "image";
 
-  // Album pratinjau: semua gambar se-folder (dari konteks peers Browse).
+  // Preview album: all images in the same folder (from Browse's peer context).
   const mediaPeers = peers.filter((p) => kindOf(p.mimeType) === "image");
   const album = mediaPeers.map((p) => ({ src: `/p/${p.id}`, alt: p.name }));
   const albumIdx = Math.max(0, mediaPeers.findIndex((p) => p.id === file.id));
@@ -244,7 +244,7 @@ function formatDuration(sec: number): string {
   return `${h} jam ${m % 60} mnt`;
 }
 
-// Pratinjau teks/kode murah: ambil sampai batas, tampilkan polos.
+// Cheap text/code preview: fetch up to a limit, render plain.
 const TEXT_LIMIT = 200_000;
 
 function TextPreview({ url, name }: { url: string; name: string }) {

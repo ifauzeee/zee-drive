@@ -16,7 +16,7 @@ export function navigate(to: string): void {
     window.dispatchEvent(new PopStateEvent("popstate"));
     window.scrollTo(0, 0);
   };
-  // View Transition API bila didukung, fallback ke navigasi biasa.
+  // Use the View Transition API when supported, otherwise navigate normally.
   if (document.startViewTransition) document.startViewTransition(go);
   else go();
 }
