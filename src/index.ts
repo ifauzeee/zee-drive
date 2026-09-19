@@ -394,7 +394,7 @@ async function serveFile(c: AppContext, inline: boolean) {
       actor: c.get("session").email,
       action: inline ? "preview" : "download",
       file_id: fileId,
-    });
+    }).catch(() => {});
     return res;
   } catch (error) {
     return errorJson(c, error);
@@ -627,7 +627,7 @@ app.get("/s/:token", async (c) => {
       action: "share.download",
       file_id: fileId,
       detail: c.req.query("dl") === "1" ? "dl" : null,
-    });
+    }).catch(() => {});
     return res;
   } catch (error) {
     return errorJson(c, error);
