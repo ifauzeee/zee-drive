@@ -612,7 +612,7 @@ app.get("/s/:token", async (c) => {
     await requireUnlocked(c.env, fileId, parseCookies(c.req.header("cookie") ?? null));
     const changes = await touchShareLink(c.env.DB, row.id);
     if (changes === 0) {
-      // Cap tercapai atau share di-revoke tepat saat stream dimulai — hentikan.
+      // The cap filled or the share was revoked right as the stream started.
       throw new HttpError(410, "Batas unduhan share link tercapai.");
     }
     const inline = c.req.query("dl") === "1" ? false : row.download_only !== 1;
