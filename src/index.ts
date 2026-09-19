@@ -616,7 +616,11 @@ app.get("/s/:token", async (c) => {
       fileId = target;
     }
     await requireUnlocked(c.env, fileId, parseCookies(c.req.header("cookie") ?? null));
-    await touchShareLink(c.env.DB, row.id);
+    const changes = await touchShareLink(c.env.DB, row.id);
+    if (changes === 0) {
+      // The cap filled or the share was revoked right as the stream started.
+      throw new HttpError(410, "Batas unduhan share link tercapai.");
+    }
     const inline = c.req.query("dl") === "1" ? false : row.download_only !== 1;
     return await proxyFile(c.env, fileId, {
       inline,
