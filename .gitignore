@@ -1,0 +1,9 @@
+node_modules/
+public/
+dist/
+.dev.vars
+.wrangler/
+.playwright-mcp/
+*.log
+.env
+.env.*

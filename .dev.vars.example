@@ -1,0 +1,15 @@
+# Google OAuth credentials
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REFRESH_TOKEN=
+
+# Secrets (generate with: openssl rand -base64 32)
+SESSION_SECRET=
+SHARE_SECRET_KEY=
+
+# App configuration
+ROOT_FOLDER_ID=
+ALLOWED_EMAILS=you@example.com
+OAUTH_REDIRECT_URI=
+CACHE_TTL_SECONDS=300
+APP_NAME=Zee-Drive

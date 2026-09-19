@@ -1,0 +1,609 @@
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { downloadZip } from "client-zip";
+import QRCode from "react-qr-code";
+import { ApiError, api, formatBytes, formatDate, kindOf } from "../api";
+import type { Crumb, DriveFile, LockInfo, Me, SearchResult } from "../types";
+import { Empty, FileBadge, FileCard, Modal, Notice, ShortcutHelp, SkeletonCard, SkeletonRow, copyText, useToast } from "../components";
+import { navigate } from "../nav";
+
+type View = "list" | "grid";
+type Sort = "name" | "size" | "date";
+
+const VIEW_KEY = "zi-view";
+
+function loadStoredView(): View {
+  try {
+    const v = localStorage.getItem(VIEW_KEY);
+    if (v === "list" || v === "grid") return v;
+  } catch { /* private mode */ }
+  return "list";
+}
+
+function saveView(v: View) {
+  try { localStorage.setItem(VIEW_KEY, v); } catch { /* ignore */ }
+}
+
+// Sarana navigasi prev/next antar file: Browse menitipkan daftar peer ke sessionStorage.
+const PEERS_KEY = "zi-peers";
+
+function openFileFromFolder(folderId: string, files: DriveFile[], targetId: string) {
+  const peers = files
+    .filter((f) => kindOf(f.mimeType) !== "folder")
+    .map((f) => ({ id: f.id, name: f.name, mimeType: f.mimeType }));
+  try { sessionStorage.setItem(PEERS_KEY, JSON.stringify({ folderId, peers })); } catch { /* ignore */ }
+  navigate(`/f/${targetId}`);
+}
+
+// Titip konteks pencarian untuk chip "kembali ke hasil" di FileView.
+function saveLastSearch(folderId: string, query: string) {
+  try { sessionStorage.setItem("zi-last-search", JSON.stringify({ folderId, query })); } catch { /* ignore */ }
+}
+
+export default function Browse({
+  folderId,
+  me,
+  onPath,
+}: {
+  folderId: string;
+  me: Me;
+  onPath?: (p: { folderId: string; crumbs: Crumb[] }) => void;
+}) {
+  const [files, setFiles] = useState<DriveFile[] | null>(null);
+  const [crumbs, setCrumbs] = useState<Crumb[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [lock, setLock] = useState<LockInfo | null>(null);
+  const [query, setQuery] = useState("");
+  const [debounced, setDebounced] = useState("");
+  const [results, setResults] = useState<SearchResult[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [view, setView] = useState<View>(() => loadStoredView());
+  const [sort, setSort] = useState<Sort>("name");
+
+  const changeView = (v: View) => { setView(v); saveView(v); };
+  const [shareTarget, setShareTarget] = useState<DriveFile | null>(null);
+  const [zipping, setZipping] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const { push } = useToast();
+
+  // Debounce pencarian global — murah untuk daftar besar.
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(query), 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  // Pencarian server diseluruh pohon arsip.
+  useEffect(() => {
+    const q = debounced.trim();
+    if (q.length < 2) {
+      setResults(null);
+      setSearching(false);
+      return;
+    }
+    let cancelled = false;
+    setSearching(true);
+    api
+      .search(q)
+      .then((r) => { if (!cancelled) { setResults(r.results); setSearching(false); } })
+      .catch(() => { if (!cancelled) { setResults([]); setSearching(false); } });
+    return () => { cancelled = true; };
+  }, [debounced]);
+
+  // Pintasan keyboard: / fokus pencarian, g toggle tampilan, ? bantuan.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.key === "/") { e.preventDefault(); searchRef.current?.focus(); }
+      else if (e.key.toLowerCase() === "g") changeView(view === "list" ? "grid" : "list");
+      else if (e.key === "?") setShowHelp(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [view, changeView]);
+
+  const load = useCallback(async () => {
+    setError(null);
+    setLock(null);
+    setFiles(null);
+    try {
+      const res = await api.files(folderId);
+      setFiles(res.files);
+      setCrumbs(res.crumbs);
+      onPath?.({ folderId, crumbs: res.crumbs });
+      // View auto: kalau belum ada pilihan tersimpan dan folder didominasi media → galeri.
+      try {
+        if (!localStorage.getItem(VIEW_KEY)) {
+          const media = res.files.filter((f) => { const k = kindOf(f.mimeType); return k === "image" || k === "video" || k === "audio"; });
+          if (media.length >= 12 && media.length / Math.max(res.files.length, 1) >= 0.6) setView("grid");
+        }
+      } catch { /* ignore */ }
+    } catch (e) {
+      if (e instanceof ApiError && e.locked) {
+        setLock(e.locked);
+      } else {
+        setError(e instanceof Error ? e.message : "Gagal memuat folder.");
+      }
+    }
+  }, [folderId]);
+
+  // Kembali dari FileView lewat tombol "kembali ke hasil pencarian": pulihkan query lama.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("zi-last-search");
+      if (raw) {
+        const { folderId: f, query: q } = JSON.parse(raw) as { folderId: string; query: string };
+        sessionStorage.removeItem("zi-last-search");
+        if (f === folderId) { setQuery(q); setDebounced(q); }
+      }
+    } catch { /* ignore */ }
+  }, [folderId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const shown = useMemo(() => {
+    const list = files ?? [];
+    const sorted = [...list];
+    if (sort === "name") sorted.sort((a, b) => a.name.localeCompare(b.name, "id"));
+    else if (sort === "date") sorted.sort((a, b) => (b.modifiedTime ?? "").localeCompare(a.modifiedTime ?? ""));
+    else sorted.sort((a, b) => Number(b.size || 0) - Number(a.size || 0));
+    // Folders first.
+    sorted.sort((a, b) => Number(kindOf(b.mimeType) === "folder") - Number(kindOf(a.mimeType) === "folder"));
+    return sorted;
+  }, [files, sort]);
+
+  const isSearching = debounced.trim().length >= 2;
+
+  async function downloadZipFolder() {
+    if (!files) return;
+    const items = files.filter((f) => kindOf(f.mimeType) !== "folder");
+    if (items.length === 0) {
+      push("info", "Tidak ada file untuk diarsipkan.");
+      return;
+    }
+    if (items.length > 60) {
+      push("error", "Folder terlalu besar — maksimal 60 file sekali arsip.");
+      return;
+    }
+    setZipping(true);
+    try {
+      const sources = await Promise.all(
+        items.map(async (f) => {
+          const res = await fetch(`/d/${f.id}`, { credentials: "same-origin" });
+          if (!res.ok) throw new Error(`Gagal mengambil ${f.name}.`);
+          return { name: f.name, input: res };
+        }),
+      );
+      const resp = downloadZip(sources);
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${crumbs[crumbs.length - 1]?.name ?? "arsip"}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      push("ok", `Arsip dibuat (${items.length} file).`);
+    } catch (e2) {
+      push("error", e2 instanceof Error ? e2.message : "Gagal membuat arsip.");
+    } finally {
+      setZipping(false);
+    }
+  }
+
+  const folders = shown.filter((f) => kindOf(f.mimeType) === "folder").length;
+  const totalSize = (files ?? [])
+    .filter((f) => kindOf(f.mimeType) !== "folder")
+    .reduce((n, f) => n + Number(f.size || 0), 0);
+
+  if (lock) return <UnlockGate key={lock.folderId} lock={lock} onDone={load} />;
+  if (error) {
+    return (
+      <div className="pagehead">
+        <Notice kind="error">{error}</Notice>
+        <button className="btn" onClick={() => void load()}>Coba lagi</button>
+      </div>
+    );
+  }
+  if (files === null) return (
+    <div>
+      <div className="pagehead">
+        <div className="skeleton" style={{ height: 12, width: 140, borderRadius: 4 }} />
+        <div className="skeleton" style={{ height: 28, width: "30%", borderRadius: 6, marginTop: 10 }} />
+      </div>
+      <div className="toolbar">
+        <div className="skeleton" style={{ height: 36, flex: "1 1 220px", borderRadius: "var(--radius-sm)" }} />
+        <div className="skeleton" style={{ height: 36, width: 100, borderRadius: "var(--radius-sm)" }} />
+      </div>
+      {view === "grid" ? (
+        <div className="filegrid">
+          <SkeletonCard /><SkeletonCard /><SkeletonCard /><SkeletonCard /><SkeletonCard /><SkeletonCard />
+        </div>
+      ) : (
+        <div className="filelist">
+          <SkeletonRow /><SkeletonRow /><SkeletonRow /><SkeletonRow /><SkeletonRow />
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <>
+      <div className="pagehead">
+        <div className="kicker">Arsip · {folders} folder · {formatBytes(totalSize)}</div>
+        <h1>{crumbs.length > 0 ? crumbs[crumbs.length - 1].name : "Arsip"}</h1>
+      </div>
+
+      <nav className="crumbs" aria-label="Breadcrumb">
+        {crumbs.length > 5 ? (
+          <>
+            {crumbs.slice(0, 1).map((c) => (
+              <span key={c.id} style={{ display: "contents" }}>
+                <a href={`/b/${c.id}`} onClick={(e) => { e.preventDefault(); navigate(`/b/${c.id}`); }}>{c.name}</a>
+                <span className="sep" aria-hidden="true">/</span>
+              </span>
+            ))}
+            <span className="crumbs-collapse" title={`${crumbs.length - 3} folder di antaranya`}>
+              ···{crumbs.length - 3}
+            </span>
+            {crumbs.slice(-2).map((c, i) => (
+              <span key={c.id} style={{ display: "contents" }}>
+                <span className="sep" aria-hidden="true">/</span>
+                {i === 1 ? (
+                  <span className="here" aria-current="page">{c.name}</span>
+                ) : (
+                  <a href={`/b/${c.id}`} onClick={(e) => { e.preventDefault(); navigate(`/b/${c.id}`); }}>{c.name}</a>
+                )}
+              </span>
+            ))}
+          </>
+        ) : (
+          crumbs.map((c, i) => (
+            <span key={c.id} style={{ display: "contents" }}>
+              {i > 0 ? <span className="sep" aria-hidden="true">/</span> : null}
+              {i === crumbs.length - 1 ? (
+                <span className="here" aria-current="page">{c.name}</span>
+              ) : (
+                <a href={`/b/${c.id}`} onClick={(e) => { e.preventDefault(); navigate(`/b/${c.id}`); }}>
+                  {c.name}
+                </a>
+              )}
+            </span>
+          ))
+        )}
+      </nav>
+
+      <div className="toolbar" role="search">
+        <label className="search">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.6" />
+            <path d="M11 11l3 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          </svg>
+          <input
+            ref={searchRef}
+            placeholder="Cari di seluruh arsip… ( / )"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label="Cari file"
+          />
+        </label>
+        <button
+          className="btn"
+          onClick={() => void downloadZipFolder()}
+          disabled={zipping || isSearching || (files?.length ?? 0) === 0}
+          title="Arsip folder saat ini (file saja, tanpa subfolder)"
+        >
+          {zipping ? "Menggabung…" : "Unduh .zip"}
+        </button>
+        <select className="select" value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Urutkan">
+          <option value="name">Nama</option>
+          <option value="date">Terbaru</option>
+          <option value="size">Terbesar</option>
+        </select>
+        <div className="seg" role="group" aria-label="Tampilan">
+          <button aria-pressed={view === "list"} onClick={() => changeView("list")}>Daftar</button>
+          <button aria-pressed={view === "grid"} onClick={() => changeView("grid")}>Galeri</button>
+        </div>
+      </div>
+
+      {isSearching ? (
+        <SearchPanel
+          results={results}
+          searching={searching}
+          query={debounced.trim()}
+          onClear={() => { setQuery(""); setDebounced(""); }}
+          onOpenFile={(id) => { saveLastSearch(folderId, debounced.trim()); openFileFromFolder(folderId, files ?? [], id); }}
+        />
+      ) : shown.length === 0 ? (
+        <Empty title="Folder kosong." />
+      ) : view === "list" ? (
+        <div className="filelist" role="list">
+          {shown.map((f) => (
+            <Row key={f.id} file={f} me={me} onShare={() => setShareTarget(f)} onOpenFile={(id) => openFileFromFolder(folderId, files ?? [], id)} />
+          ))}
+        </div>
+      ) : (
+        <div className="filegrid">
+          {shown.map((f) => (
+            <FileCard key={f.id} file={f} onOpen={(file) => (kindOf(file.mimeType) === "folder" ? navigate(`/b/${file.id}`) : openFileFromFolder(folderId, files ?? [], file.id))} />
+          ))}
+        </div>
+      )}
+
+      {shareTarget ? <ShareDialog file={shareTarget} onClose={() => setShareTarget(null)} /> : null}
+      {showHelp ? <ShortcutHelp onClose={() => setShowHelp(false)} /> : null}
+    </>
+  );
+}
+
+function SearchPanel({
+  results,
+  searching,
+  query,
+  onClear,
+  onOpenFile,
+}: {
+  results: SearchResult[] | null;
+  searching: boolean;
+  query: string;
+  onClear: () => void;
+  onOpenFile: (fileId: string) => void;
+}) {
+  if (results === null) {
+    return (
+      <div className="filelist" aria-busy="true">
+        <SkeletonRow /><SkeletonRow /><SkeletonRow />
+      </div>
+    );
+  }
+  if (!searching && results.length === 0) {
+    return (
+      <div>
+        <Empty title="Tidak ditemukan." hint={`Kata kunci "${query}" tidak cocok dengan isi arsip.`} />
+        <div style={{ textAlign: "center", marginTop: 12 }}>
+          <button className="btn ghost" onClick={onClear}>Bersihkan pencarian</button>
+        </div>
+      </div>
+    );
+  }
+  if (results.length === 0) {
+    return (
+      <div className="filelist" aria-busy="true">
+        <SkeletonRow />
+      </div>
+    );
+  }
+  return (
+    <div className="filelist" role="list">
+      {results.map((r) => {
+        const folder = kindOf(r.file.mimeType) === "folder";
+        const to = folder ? `/b/${r.file.id}` : `/f/${r.file.id}`;
+        const loc = r.crumbs.filter((x) => x.id !== r.file.id).map((x) => x.name).join(" / ") || "Arsip";
+        return (
+          <div key={r.file.id} style={{ display: "contents" }} role="listitem">
+            <a
+              className="filerow"
+              href={to}
+              onClick={(e) => { e.preventDefault(); folder ? navigate(to) : onOpenFile(r.file.id); }}
+              aria-label={`Buka ${folder ? "folder" : "file"} ${r.file.name}`}
+            >
+              <FileBadge mime={r.file.mimeType} />
+              <span className="fname">{r.file.name}</span>
+              <span className="fmeta hide-sm">{folder ? "folder" : formatBytes(r.file.size)} · {loc}</span>
+            </a>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function Row({ file, me, onShare, onOpenFile }: { file: DriveFile; me: Me; onShare: () => void; onOpenFile: (id: string) => void }) {
+  const folder = kindOf(file.mimeType) === "folder";
+  const to = folder ? `/b/${file.id}` : `/f/${file.id}`;
+  const img = file.thumbnailLink && kindOf(file.mimeType) === "image";
+  return (
+    <div style={{ display: "contents" }} role="listitem">
+      <a
+        className="filerow"
+        href={to}
+        onClick={(e) => { e.preventDefault(); folder ? navigate(to) : onOpenFile(file.id); }}
+        aria-label={`${folder ? "Buka folder" : "Buka file"} ${file.name}`}
+      >
+        {img ? (
+          <img className="thumb" src={file.thumbnailLink} alt="" loading="lazy" referrerPolicy="no-referrer" />
+        ) : (
+          <FileBadge mime={file.mimeType} />
+        )}
+        <span className="fname">{file.name}</span>
+        <span className="fmeta hide-sm">{folder ? "folder" : formatBytes(file.size)} · {formatDate(file.modifiedTime)}</span>
+        <span
+          className="factions"
+          onClick={(e) => {
+            if (!(e.target instanceof HTMLAnchorElement)) e.preventDefault();
+            e.stopPropagation();
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          {!folder ? (
+            <a className="iconbtn" href={`/d/${file.id}`} title={`Unduh ${file.name}`} download>UNDUH</a>
+          ) : null}
+          {me?.admin ? <button className="iconbtn" onClick={onShare} title={`Bagikan ${file.name}`}>BAGIKAN</button> : null}
+        </span>
+      </a>
+    </div>
+  );
+}
+
+export function UnlockGate({ lock, onDone }: { lock: LockInfo; onDone: () => void }) {
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.unlock(lock.folderId, password);
+      onDone();
+    } catch (e2) {
+      setError(e2 instanceof Error ? e2.message : "Gagal membuka folder.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="gate">
+      <div className="lockmark" aria-hidden="true" />
+      <div className="kicker">Folder terkunci</div>
+      <h1 style={{ margin: "0 0 6px" }}>{lock.folderName}</h1>
+      <p style={{ color: "var(--ink-2)" }}>Folder ini dilindungi kata sandi. Masukkan untuk melanjutkan.</p>
+      {error ? <Notice kind="error">{error}</Notice> : null}
+      <form onSubmit={submit}>
+        <div className="field" style={{ textAlign: "left" }}>
+          <label htmlFor="unlock-pass">Kata sandi</label>
+          <input
+            id="unlock-pass"
+            className="input"
+            type="password"
+            autoComplete="off"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoFocus
+          />
+        </div>
+        <button className="btn primary" disabled={busy || !password} style={{ width: "100%", justifyContent: "center" }}>
+          {busy ? "Membuka…" : "Buka folder"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function ShareDialog({ file, onClose }: { file: DriveFile; onClose: () => void }) {
+  const { push } = useToast();
+  const [hours, setHours] = useState("72");
+  const [maxUses, setMaxUses] = useState("");
+  const [downloadOnly, setDownloadOnly] = useState(false);
+  const [password, setPassword] = useState("");
+  const [result, setResult] = useState<{ url: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const isFolder = kindOf(file.mimeType) === "folder";
+
+  async function create(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.createShare({
+        fileId: file.id,
+        expiresInHours: hours ? Number(hours) : null,
+        maxUses: maxUses ? Number(maxUses) : null,
+        downloadOnly,
+        password: password || null,
+      });
+      const url = `${window.location.origin}${res.url}`;
+      setResult({ url });
+      push("ok", "Share link dibuat.");
+      if (await copyText(url)) {
+        setCopied(true);
+        push("ok", "Tautan disalin otomatis.");
+      }
+    } catch (e2) {
+      setError(e2 instanceof Error ? e2.message : "Gagal membuat share link.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title={isFolder ? "Bagikan folder" : "Bagikan file"} sub={file.name} onClose={onClose}>
+      {result ? (
+        <>
+          <Notice kind="ok">Share link dibuat. Siapa pun yang punya tautan bisa {isFolder ? "menjelajahi folder" : "mengakses file"} ini.</Notice>
+          <div className="field">
+            <label htmlFor="share-url">Tautan</label>
+            <input id="share-url" className="input mono" readOnly value={result.url} onFocus={(e) => e.target.select()} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "center", padding: "10px 0" }}>
+            <span style={{ color: "var(--ink-1)" }}>
+              <QRCode value={result.url} size={148} bgColor="transparent" fgColor="currentColor" />
+            </span>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              className="btn primary"
+              onClick={async () => {
+                const ok = await copyText(result.url);
+                setCopied(ok);
+                if (ok) push("ok", "Tautan tersalin.");
+              }}
+            >
+              {copied ? "Tersalin ✓" : "Salin tautan"}
+            </button>
+            <button className="btn ghost" onClick={onClose}>Tutup</button>
+          </div>
+        </>
+      ) : (
+        <form onSubmit={create}>
+          {error ? <Notice kind="error">{error}</Notice> : null}
+          <div className="row2">
+            <div className="field">
+              <label htmlFor="share-exp">Kedaluwarsa (jam)</label>
+              <input
+                id="share-exp"
+                className="input mono"
+                inputMode="numeric"
+                placeholder="kosong = selamanya"
+                value={hours}
+                onChange={(e) => setHours(e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="share-max">Maks. unduhan</label>
+              <input
+                id="share-max"
+                className="input mono"
+                inputMode="numeric"
+                placeholder="kosong = tanpa batas"
+                value={maxUses}
+                onChange={(e) => setMaxUses(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="field">
+            <label htmlFor="share-pass">Kata sandi (opsional)</label>
+            <input
+              id="share-pass"
+              className="input"
+              type="password"
+              autoComplete="new-password"
+              placeholder="kosong = tanpa kata sandi"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+          {!isFolder ? (
+            <label className="checkrow">
+              <input type="checkbox" checked={downloadOnly} onChange={(e) => setDownloadOnly(e.target.checked)} />
+              <span>
+                <strong>Hanya unduh.</strong>
+                <br />
+                <span style={{ color: "var(--ink-2)", fontSize: 13 }}>Penerima langsung mengunduh tanpa halaman pratinjau.</span>
+              </span>
+            </label>
+          ) : null}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn primary" disabled={busy}>{busy ? "Membuat…" : "Buat tautan"}</button>
+            <button type="button" className="btn ghost" onClick={onClose}>Batal</button>
+          </div>
+        </form>
+      )}
+    </Modal>
+  );
+}

@@ -1,0 +1,29 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "zee-drive",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "triggers": { "crons": ["0 3 * * *"] },
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "none"
+  },
+  "kv_namespaces": [
+    { "binding": "CACHE", "id": "d99acc4897af426783049246003a207e" }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "zee-index-db",
+      "database_id": "c339861d-0e5c-412c-8200-e4c2975b6867",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "ROOT_FOLDER_ID": "1UT6P3-NZ1vd0bGkd4rm2FQRPgb3i_jY2",
+    "ALLOWED_EMAILS": "ifauze343@gmail.com",
+    "CACHE_TTL_SECONDS": "300",
+    "APP_NAME": "Zee-Drive"
+  }
+}
