@@ -120,7 +120,8 @@ export async function getBreadcrumb(
   const crumbs: Crumb[] = [];
   let current: string | undefined = folderId;
 
-  for (let depth = 0; depth < 25 && current; depth++) {
+  // ponytail: 64-level ceiling; breadcrumbs beyond that are pathological.
+  for (let depth = 0; depth < 64 && current; depth++) {
     if (current === rootId) {
       crumbs.unshift({ id: rootId, name: "Home" });
       break;
