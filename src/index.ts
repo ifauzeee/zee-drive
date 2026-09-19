@@ -794,6 +794,16 @@ app.post("/api/admin/config", requireAdmin, async (c) => {
   return c.json({ ok: true });
 });
 
+app.post("/api/admin/refresh", requireAdmin, async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { folderId?: string } | null;
+  if (!body?.folderId) return c.json({ error: "folderId diperlukan." }, 400);
+  if (c.env.CACHE) {
+    await c.env.CACHE.delete(`list:${body.folderId}`);
+    await c.env.CACHE.delete(`meta:${body.folderId}`);
+  }
+  return c.json({ ok: true });
+});
+
 app.get("/api/admin/activity", requireAdmin, async (c) => {
   if (c.req.query("format") === "csv") {
     const rows = await listActivity(c.env.DB, 1000);

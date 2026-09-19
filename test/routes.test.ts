@@ -372,6 +372,38 @@ describe("admin activity csv", () => {
   });
 });
 
+describe("admin refresh", () => {
+  it("busts the folder list and meta cache", async () => {
+    const cacheDelete = vi.fn();
+    const ckv = { get: vi.fn(), put: vi.fn(), delete: cacheDelete, list: vi.fn() };
+    const res = await get("/api/admin/refresh", env({ CACHE: ckv }), {
+      method: "POST",
+      headers: { cookie: await cookieFor(ADMIN_DB, "Admin"), "content-type": "application/json" },
+      body: JSON.stringify({ folderId: "root" }),
+    });
+    expect(res.status).toBe(200);
+    expect(cacheDelete).toHaveBeenCalledWith("list:root");
+    expect(cacheDelete).toHaveBeenCalledWith("meta:root");
+  });
+
+  it("rejects guests", async () => {
+    const res = await get("/api/admin/refresh", {}, {
+      method: "POST",
+      body: JSON.stringify({ folderId: "root" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("requires a folderId", async () => {
+    const res = await get("/api/admin/refresh", {}, {
+      method: "POST",
+      headers: { cookie: await cookieFor(ADMIN_DB, "Admin"), "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("quota", () => {
   it("serves live storage usage for a session", async () => {
     vi.mocked(drive.getStorageQuota).mockResolvedValueOnce({ limit: "10", usage: "5" });

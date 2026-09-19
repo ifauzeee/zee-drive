@@ -96,6 +96,8 @@ export const api = {
   saveConfig: (input: { maintenance?: boolean; guest?: boolean }) =>
     req<{ ok: boolean }>("/api/admin/config", { method: "POST", body: JSON.stringify(input) }),
   activity: () => req<{ activity: Activity[] }>("/api/admin/activity"),
+  refresh: (folderId: string) =>
+    req<{ ok: boolean }>("/api/admin/refresh", { method: "POST", body: JSON.stringify({ folderId }) }),
   upload: (file: File, folderId: string, onProgress?: (fraction: number) => void) =>
     new Promise<{ file: { id: string; name: string } }>((resolve, reject) => {
       const xhr = new XMLHttpRequest();

@@ -306,6 +306,18 @@ export default function Browse({
             Unggah
           </button>
         ) : null}
+        {me?.admin ? (
+          <button
+            className="btn"
+            onClick={() => { void (async () => {
+              await api.refresh(folderId);
+              void load();
+            })(); }}
+            title="Hapus cache folder dan muat ulang dari Drive"
+          >
+            Muat ulang
+          </button>
+        ) : null}
         <select className="select" value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Urutkan">
           <option value="name">Nama</option>
           <option value="date">Terbaru</option>
