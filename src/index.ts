@@ -33,6 +33,7 @@ import {
   searchDrive,
 } from "./drive";
 import {
+  createSession,
   createShareLink,
   getFolderPassword,
   getShareLink,
@@ -42,8 +43,10 @@ import {
   listShareLinks,
   logActivity,
   pruneActivity,
+  pruneSessions,
   pruneShareLinks,
   removeFolderPassword,
+  revokeSession,
   revokeShareLink,
   setFolderPassword,
   setSetting,
@@ -71,7 +74,7 @@ app.use("*", async (c, next) => {
   if (!MOBILE_UA.test(ua)) return next();
   const cookies = parseCookies(c.req.header("cookie") ?? null);
   const admin = !!cookies[SESSION_COOKIE] &&
-    isAdmin((await verifySession(cookies[SESSION_COOKIE], c.env.SESSION_SECRET))?.email ?? "", c.env);
+    isAdmin((await verifySession(cookies[SESSION_COOKIE], c.env))?.email ?? "", c.env);
   if (admin) return next();
   return new Response(mobileMaintenanceHtml, {
     status: 503,
@@ -172,7 +175,7 @@ async function canBypassMaintenance(c: AppContext): Promise<boolean> {
   // /api/auth/me stays open so the SPA can still render session state.
   if (new URL(c.req.url).pathname === "/api/auth/me") return true;
   const cookies = parseCookies(c.req.header("cookie") ?? null);
-  const session = await verifySession(cookies[SESSION_COOKIE], c.env.SESSION_SECRET);
+  const session = await verifySession(cookies[SESSION_COOKIE], c.env);
   return !!session && isAdmin(session.email, c.env);
 }
 
@@ -224,10 +227,9 @@ async function finishLogin(c: AppContext): Promise<Response> {
       return new Response("Email Google belum diverifikasi.", { status: 403, headers });
     }
     requireAdminEmail(user.email, c.env);
-    const token = await signSession(
-      newSession(user.email, user.name || user.email, user.picture),
-      c.env.SESSION_SECRET,
-    );
+    const session = newSession(user.email, user.name || user.email, user.picture);
+    await createSession(c.env.DB, session.jti, session.email, SESSION_MAX_AGE);
+    const token = await signSession(session, c.env.SESSION_SECRET);
     headers.append("set-cookie", serializeCookie(SESSION_COOKIE, token, cookieOpts(c)));
     await logActivity(c.env.DB, { actor: user.email, action: "login" });
     return new Response(null, { status: 302, headers });
@@ -245,14 +247,22 @@ app.get("/auth/guest", async (c) => {
   if (guestSetting === "0") {
     return new Response("Login tamu dinonaktifkan oleh admin.", { status: 403 });
   }
-  const token = await signSession(newGuestSession(), c.env.SESSION_SECRET);
+  const session = newGuestSession();
+  await createSession(c.env.DB, session.jti, session.email, SESSION_MAX_AGE);
+  const token = await signSession(session, c.env.SESSION_SECRET);
   const headers = new Headers({ location: "/", "cache-control": "no-store" });
   headers.append("set-cookie", serializeCookie(SESSION_COOKIE, token, cookieOpts(c)));
   await logActivity(c.env.DB, { actor: GUEST_EMAIL, action: "login.guest" });
   return new Response(null, { status: 302, headers });
 });
 
-app.get("/logout", (c) => {
+app.get("/logout", async (c) => {
+  const cookies = parseCookies(c.req.header("cookie") ?? null);
+  const session = await verifySession(cookies[SESSION_COOKIE], c.env);
+  if (session) {
+    await revokeSession(c.env.DB, session.jti);
+    await logActivity(c.env.DB, { actor: session.email, action: "logout" });
+  }
   const headers = new Headers({ location: "/login", "cache-control": "no-store" });
   headers.append(
     "set-cookie",
@@ -263,7 +273,7 @@ app.get("/logout", (c) => {
 
 app.get("/api/auth/me", async (c) => {
   const cookies = parseCookies(c.req.header("cookie") ?? null);
-  const session = await verifySession(cookies[SESSION_COOKIE], c.env.SESSION_SECRET);
+  const session = await verifySession(cookies[SESSION_COOKIE], c.env);
   if (!session) return c.json({ user: null });
   return c.json({
     user: {
@@ -277,7 +287,7 @@ app.get("/api/auth/me", async (c) => {
 
 const requireSession = async (c: AppContext, next: () => Promise<void>) => {
   const cookies = parseCookies(c.req.header("cookie") ?? null);
-  const session = await verifySession(cookies[SESSION_COOKIE], c.env.SESSION_SECRET);
+  const session = await verifySession(cookies[SESSION_COOKIE], c.env);
   if (!session) return c.json({ error: "Login diperlukan." }, 401);
   c.set("session", session);
   await next();
@@ -285,7 +295,7 @@ const requireSession = async (c: AppContext, next: () => Promise<void>) => {
 
 const requireAdmin = async (c: AppContext, next: () => Promise<void>) => {
   const cookies = parseCookies(c.req.header("cookie") ?? null);
-  const session = await verifySession(cookies[SESSION_COOKIE], c.env.SESSION_SECRET);
+  const session = await verifySession(cookies[SESSION_COOKIE], c.env);
   if (!session) return c.json({ error: "Login diperlukan." }, 401);
   try {
     requireAdminEmail(session.email, c.env);
@@ -810,7 +820,8 @@ app.get("*", async (c) => {
 async function scheduled(_event: unknown, env: AppEnv) {
   const shareLinks = await pruneShareLinks(env.DB);
   const activity = await pruneActivity(env.DB, 90 * 24 * 3600);
-  console.log(`scheduled cleanup: ${shareLinks} share links, ${activity} activity rows`);
+  const sessions = await pruneSessions(env.DB);
+  console.log(`scheduled cleanup: ${shareLinks} share links, ${activity} activity rows, ${sessions} sessions`);
 }
 
 const worker: ExportedHandler<AppEnv> = {
