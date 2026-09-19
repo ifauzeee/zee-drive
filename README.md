@@ -36,6 +36,12 @@ Browser -> Workers (Hono)
 
 Audio/video streams through `fetch` -- no CPU time spent waiting on network, so large media files work within limits. Folder listings are cached in KV for 300 seconds so each request only makes one Drive API call.
 
+## Operations
+- **Migrations**: unapplied migrations auto-run during CI deploy (`wrangler d1 migrations apply zee-index-db --remote`). Apply manually with `npm run db:migrate:remote`.
+- **D1 backups**: enable Time Travel for the paid plan at Cloudflare dashboard -> D1 -> zee-index-db; backups are automatic and restorable to any point in the last 30 days.
+- **Nightly cleanup**: the `0 3 * * *` cron prunes expired/revoked share links, sessions, and activity older than 90 days. Keep the cron trigger enabled in the dashboard.
+- **Secrets**: required vars live in `.dev.vars` (local) and `wrangler secret put` (prod): `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`, `SESSION_SECRET`, `SHARE_SECRET_KEY`.
+
 ## Quick start
 
 ### 1. Google credentials

@@ -59,7 +59,7 @@ export default function Browse({
   const [view, setView] = useState<View>(() => loadStoredView());
   const [sort, setSort] = useState<Sort>("name");
 
-  const changeView = (v: View) => { setView(v); saveView(v); };
+  const changeView = useCallback((v: View) => { setView(v); saveView(v); }, []);
   const [shareTarget, setShareTarget] = useState<DriveFile | null>(null);
   const [showUpload, setShowUpload] = useState(false);
   const [zipping, setZipping] = useState(false);
@@ -125,7 +125,10 @@ export default function Browse({
       } else {
         setError(e instanceof Error ? e.message : "Gagal memuat folder.");
       }
-    }
+}
+    // onPath is an inline prop from App; excluding it prevents a reload loop
+    // (App re-renders set crumbs -> new onPath identity -> effect re-fires).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [folderId]);
 
   // Returning from FileView via the "back to results" button: restore the old query.
@@ -415,7 +418,7 @@ function SearchPanel({
             <a
               className="filerow"
               href={to}
-              onClick={(e) => { e.preventDefault(); folder ? navigate(to) : onOpenFile(r.file.id); }}
+              onClick={(e) => { e.preventDefault(); if (folder) navigate(to); else onOpenFile(r.file.id); }}
               aria-label={`Buka ${folder ? "folder" : "file"} ${r.file.name}`}
             >
               <FileBadge mime={r.file.mimeType} />
@@ -438,7 +441,7 @@ function Row({ file, me, onShare, onOpenFile }: { file: DriveFile; me: Me; onSha
       <a
         className="filerow"
         href={to}
-        onClick={(e) => { e.preventDefault(); folder ? navigate(to) : onOpenFile(file.id); }}
+        onClick={(e) => { e.preventDefault(); if (folder) navigate(to); else onOpenFile(file.id); }}
         aria-label={`${folder ? "Buka folder" : "Buka file"} ${file.name}`}
       >
         {img ? (

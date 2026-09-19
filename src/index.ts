@@ -521,7 +521,7 @@ app.post("/api/share/revoke", requireAdmin, async (c) => {
   return c.json({ ok });
 });
 
-// Admin: upload file ke folder Drive (melalui worker, maks 95 MiB).
+// Admin: upload a file into a Drive folder via the worker (cap 95 MiB).
 app.post("/api/upload", requireAdmin, async (c) => {
   const folderId = c.req.query("folder") || c.env.ROOT_FOLDER_ID;
 

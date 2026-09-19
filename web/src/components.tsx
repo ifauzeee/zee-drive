@@ -101,7 +101,7 @@ export function FileCard({ file, onOpen }: { file: DriveFile; onOpen?: (file: Dr
   const folder = kindOf(file.mimeType) === "folder";
   const to = folder ? `/b/${file.id}` : `/f/${file.id}`;
   return (
-    <a className="filecard" href={to} onClick={(e) => { e.preventDefault(); onOpen ? onOpen(file) : navigate(to); }}>
+    <a className="filecard" href={to} onClick={(e) => { e.preventDefault(); if (onOpen) onOpen(file); else navigate(to); }}>
       <span className="shot">
         {file.thumbnailLink && (kindOf(file.mimeType) === "image" || kindOf(file.mimeType) === "video") ? (
           <img src={file.thumbnailLink} alt="" loading="lazy" referrerPolicy="no-referrer" />
