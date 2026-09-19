@@ -53,6 +53,7 @@ const getAncestors = vi.mocked(drive.getAncestors);
 const getBreadcrumb = vi.mocked(drive.getBreadcrumb);
 const getMeta = vi.mocked(drive.getMeta);
 const listFolder = vi.mocked(drive.listFolder);
+const logActivity = vi.mocked(db.logActivity);
 
 const DEFAULT_META = {
   id: "root",
@@ -171,6 +172,39 @@ describe("maintenance mode", () => {
     const res = await get("/api/files", {}, { headers: { cookie: await cookieFor(ADMIN_DB, "Admin") } });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ files: [], crumbs: [] });
+  });
+});
+
+describe("activity logging on file access", () => {
+  it("logs a download with the session actor", async () => {
+    const cookie = await cookieFor(ADMIN_DB, "Admin");
+    const res = await get("/d/F1", {}, { headers: { cookie } });
+    expect(res.status).toBe(200);
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ actor: ADMIN_DB, action: "download", file_id: "F1" }),
+    );
+  });
+
+  it("logs a preview with action preview", async () => {
+    const cookie = await cookieFor(ADMIN_DB, "Admin");
+    const res = await get("/p/F1", {}, { headers: { cookie } });
+    expect(res.status).toBe(200);
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ actor: ADMIN_DB, action: "preview", file_id: "F1" }),
+    );
+  });
+
+  it("logs public share downloads under share:<sid>", async () => {
+    getShareLink.mockResolvedValueOnce(shareRow("s1", { file_id: "F1" }));
+    const token = await signJson({ sid: "s1", fid: "F1" }, SECRETS.SHARE_SECRET_KEY);
+    const res = await get(`/s/${token}`);
+    expect(res.status).toBe(200);
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ actor: "share:s1", action: "share.download", file_id: "F1" }),
+    );
   });
 });
 

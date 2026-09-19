@@ -386,10 +386,16 @@ async function serveFile(c: AppContext, inline: boolean) {
   try {
     const fileId = c.req.param("id") ?? "";
     await requireUnlocked(c.env, fileId, parseCookies(c.req.header("cookie") ?? null));
-    return await proxyFile(c.env, fileId, {
+    const res = await proxyFile(c.env, fileId, {
       inline,
       range: c.req.header("range") ?? null,
     });
+    await logActivity(c.env.DB, {
+      actor: c.get("session").email,
+      action: inline ? "preview" : "download",
+      file_id: fileId,
+    });
+    return res;
   } catch (error) {
     return errorJson(c, error);
   }
@@ -612,10 +618,17 @@ app.get("/s/:token", async (c) => {
     await requireUnlocked(c.env, fileId, parseCookies(c.req.header("cookie") ?? null));
     await touchShareLink(c.env.DB, row.id);
     const inline = c.req.query("dl") === "1" ? false : row.download_only !== 1;
-    return await proxyFile(c.env, fileId, {
+    const res = await proxyFile(c.env, fileId, {
       inline,
       range: c.req.header("range") ?? null,
     });
+    await logActivity(c.env.DB, {
+      actor: `share:${row.id}`,
+      action: "share.download",
+      file_id: fileId,
+      detail: c.req.query("dl") === "1" ? "dl" : null,
+    });
+    return res;
   } catch (error) {
     return errorJson(c, error);
   }
