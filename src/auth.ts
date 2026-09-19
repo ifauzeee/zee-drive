@@ -2,6 +2,7 @@ import type { AppEnv } from "./env";
 import { isAdmin } from "./env";
 import { HttpError } from "./errors";
 import { signJson, verifyJson, randomId } from "./crypto";
+import { getSession } from "./db";
 
 export const SESSION_COOKIE = "zi_session";
 export const STATE_COOKIE = "zi_oauth_state";
@@ -10,7 +11,7 @@ export const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
 // Reserved identity for guest sessions; never an admin since isAdmin() checks ALLOWED_EMAILS.
 export const GUEST_EMAIL = "guest@zee.local";
 
-export type Session = { email: string; name: string; picture?: string; iat: number };
+export type Session = { email: string; name: string; picture?: string; iat: number; jti: string };
 
 export function parseCookies(header: string | null): Record<string, string> {
   const out: Record<string, string> = {};
@@ -38,7 +39,7 @@ export function serializeCookie(
 }
 
 export function newSession(email: string, name: string, picture?: string): Session {
-  return { email, name, picture, iat: Math.floor(Date.now() / 1000) };
+  return { email, name, picture, iat: Math.floor(Date.now() / 1000), jti: randomId(24) };
 }
 
 export function signSession(session: Session, secret: string): Promise<string> {
@@ -47,12 +48,17 @@ export function signSession(session: Session, secret: string): Promise<string> {
 
 export async function verifySession(
   token: string | undefined,
-  secret: string,
+  env: AppEnv,
 ): Promise<Session | null> {
   if (!token) return null;
-  const session = await verifyJson<Session>(token, secret);
-  if (!session || typeof session.email !== "string") return null;
+  const session = await verifyJson<Session>(token, env.SESSION_SECRET);
+  if (!session || typeof session.email !== "string" || typeof session.jti !== "string") return null;
   if (Date.now() / 1000 - session.iat > SESSION_MAX_AGE + 60) return null;
+  // Stateless cookie alone is not revocable: also check the database so logout
+  // really kills an old cookie, not just drop it on the client side.
+  const row = await getSession(env.DB, session.jti);
+  if (!row || row.revoked === 1 || row.email !== session.email) return null;
+  if (row.expires_at < Math.floor(Date.now() / 1000)) return null;
   return session;
 }
 
