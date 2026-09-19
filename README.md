@@ -1,5 +1,7 @@
 # Zee-Drive
 
+[![Website](https://img.shields.io/badge/live-demo-blue.svg)](https://zee-drive.ifauze343-af3.workers.dev)
+
 A lightweight file explorer and media streaming server for Google Drive, built entirely on Cloudflare's free tier. No servers, no databases to manage, no Redis. Just deploy and browse.
 
 ## Features
