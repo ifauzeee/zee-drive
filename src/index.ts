@@ -63,8 +63,8 @@ const app = new Hono<{ Bindings: AppEnv; Variables: Vars }>();
 
 app.use("*", logger());
 
-// Keep the app off mobile browsers until the responsive pass is done. The
-// standalone pages (share links) are asset-free, and admins pass through.
+// Block the app from mobile browsers during the responsive pass. Translated
+// in fix/mobile-share-access (PR #2), which owns this block.
 const MOBILE_UA = /(Mobi|Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini)/i;
 app.use("*", async (c, next) => {
   const ua = c.req.header("user-agent") ?? "";
