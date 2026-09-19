@@ -27,8 +27,6 @@ export default function App() {
   const [treeOpen, setTreeOpen] = useState(false);
   const activeFolderRef = useRef<string | null>(null);
 
-  if (isMobile) return <MobileNotice />;
-
   const reloadMe = useCallback(async () => {
     try {
       const res = await api.me();
@@ -49,6 +47,8 @@ export default function App() {
       }
     })();
   }, [reloadMe]);
+
+  if (isMobile) return <MobileNotice />;
 
   if (error) {
     return (

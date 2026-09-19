@@ -64,7 +64,6 @@ export default function FolderTree({
   useEffect(() => {
     if (activeId !== rootId) return;
     setNodes({});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId, rootId]);
 
   const go = (id: string) => {

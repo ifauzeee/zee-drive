@@ -204,7 +204,7 @@ export async function pruneShareLinks(db: D1Database): Promise<number> {
   return result.meta.changes ?? 0;
 }
 
-/** Cron maintenance: drop semua sesi yang sudah dicabut atau kedaluwarsa. */
+/** Cron maintenance: drop revoked or expired sessions. */
 export async function pruneSessions(db: D1Database): Promise<number> {
   const result = await db
     .prepare(`DELETE FROM sessions WHERE revoked = 1 OR expires_at < ?`)
