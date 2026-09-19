@@ -116,7 +116,7 @@ function shareRow(id: string, over: Record<string, unknown>) {
   };
 }
 
-// Session actor diasumsikan admin secara default; per-test bisa ganti untuk skenario lain.
+// The session actor defaults to admin; tests override it per scenario.
 let activeSessionEmail = ADMIN_DB;
 
 beforeEach(() => {

@@ -54,8 +54,8 @@ export async function verifySession(
   const session = await verifyJson<Session>(token, env.SESSION_SECRET);
   if (!session || typeof session.email !== "string" || typeof session.jti !== "string") return null;
   if (Date.now() / 1000 - session.iat > SESSION_MAX_AGE + 60) return null;
-  // Session stateless, tapi tidak bisa: cek juga database supaya logout/revoke
-  // benar-benar mematikan cookie lama, bukan sekadar buang dari sisi klien.
+  // Stateless cookie alone is not revocable: also check the database so logout
+  // really kills an old cookie, not just drop it on the client side.
   const row = await getSession(env.DB, session.jti);
   if (!row || row.revoked === 1 || row.email !== session.email) return null;
   if (row.expires_at < Math.floor(Date.now() / 1000)) return null;
