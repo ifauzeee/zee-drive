@@ -62,7 +62,7 @@
   --radius-full: 999px;
 }
 
-/* Light theme: paper putih hangat, aksen amber tetap. */
+/* Light theme: warm paper white, amber accents. */
 :root[data-theme="light"] {
   color-scheme: light;
   --bg-0: #f7f7f5;
@@ -917,7 +917,7 @@ a.filecard:hover { border-color: var(--line); background: var(--bg-2); text-deco
 .layout { display: flex; flex-direction: row; align-items: stretch; min-height: calc(100dvh - 64px); flex: 1; }
 .layout-main { flex: 1; min-width: 0; padding: 24px 0 40px; }
 
-/* ---------- sidebar pohon folder ---------- */
+/* ---------- folder tree sidebar ---------- */
 .tree-toggle {
   display: none; flex: none;
   width: 40px; height: 40px; align-items: center; justify-content: center;
@@ -1064,7 +1064,7 @@ a.filecard:hover { border-color: var(--line); background: var(--bg-2); text-deco
   .theme-toggle { min-width: 44px; min-height: 44px; }
   .factions { gap: 4px; }
 
-  /* bottom sheet: modal jadi lembar bawah layar penuh */
+  /* bottom sheet: modal becomes a full-screen sheet on small viewports */
   .overlay { place-items: end center; padding: 0; align-items: end; }
   .overlay .dialog {
     width: 100%;
@@ -1082,7 +1082,7 @@ a.filecard:hover { border-color: var(--line); background: var(--bg-2); text-deco
   @keyframes sheetIn { from { transform: translateY(100%); } to { transform: translateY(0); } }
   .overlay .dialog h2 { padding-right: 40px; }
 
-  /* file nav tidak meluber */
+  /* keep file nav from overflowing */
   .filenav .btn { max-width: 40vw; }
 }
 
