@@ -96,6 +96,36 @@ export const api = {
   saveConfig: (input: { maintenance?: boolean; guest?: boolean }) =>
     req<{ ok: boolean }>("/api/admin/config", { method: "POST", body: JSON.stringify(input) }),
   activity: () => req<{ activity: Activity[] }>("/api/admin/activity"),
+  refresh: (folderId: string) =>
+    req<{ ok: boolean }>("/api/admin/refresh", { method: "POST", body: JSON.stringify({ folderId }) }),
+  upload: (file: File, folderId: string, onProgress?: (fraction: number) => void) =>
+    new Promise<{ file: { id: string; name: string } }>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `/api/upload?folder=${encodeURIComponent(folderId)}`);
+      xhr.withCredentials = true;
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
+      };
+      xhr.onload = () => {
+        let data = {} as { error?: string; locked?: boolean; folderId?: string; folderName?: string; file?: { id: string; name: string } };
+        try { data = JSON.parse(xhr.responseText); } catch { /* non-JSON */ }
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve({ file: data.file ?? { id: "", name: file.name } });
+        } else {
+          reject(
+            new ApiError(
+              xhr.status,
+              data.error || `Upload gagal (${xhr.status}).`,
+              data.locked ? { folderId: data.folderId ?? "", folderName: data.folderName ?? "" } : undefined,
+            ),
+          );
+        }
+      };
+      xhr.onerror = () => reject(new ApiError(0, "Koneksi terputus."));
+      const fd = new FormData();
+      fd.append("file", file);
+      xhr.send(fd);
+    }),
 };
 
 export function formatBytes(value?: string | number): string {

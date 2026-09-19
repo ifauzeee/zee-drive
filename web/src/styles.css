@@ -262,6 +262,25 @@ input, select { font: inherit; }
 .crumbs a:hover { background: var(--bg-2); color: var(--ink-1); text-decoration: none; }
 .crumbs .sep { color: var(--ink-3); padding: 0 2px; }
 .crumbs .here { color: var(--primary); padding: 3px 8px; }
+.crumbs .crumbbtn {
+  background: none; border: 0; color: var(--ink-2); padding: 3px 8px;
+  border-radius: var(--radius-sm); font-family: inherit; font-size: inherit;
+  cursor: pointer;
+}
+.crumbs .crumbbtn:hover { background: var(--bg-2); color: var(--ink-1); }
+
+/* ---------- upload ---------- */
+.folderrow {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  background: none; border: 0; padding: 10px; border-radius: var(--radius-sm);
+  font-family: inherit; font-size: inherit; color: inherit; cursor: pointer;
+}
+.folderrow:hover { background: var(--bg-2); }
+.progressbar {
+  height: 8px; border-radius: 4px; overflow: hidden;
+  background: var(--bg-2); margin: 10px 0;
+}
+.progressbar > div { height: 100%; background: var(--primary); transition: width 0.15s ease; }
 
 /* ---------- toolbar ---------- */
 .toolbar {

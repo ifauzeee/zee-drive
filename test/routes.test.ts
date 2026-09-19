@@ -499,6 +499,38 @@ describe("admin activity csv", () => {
   });
 });
 
+describe("admin refresh", () => {
+  it("busts the folder list and meta cache", async () => {
+    const cacheDelete = vi.fn();
+    const ckv = { get: vi.fn(), put: vi.fn(), delete: cacheDelete, list: vi.fn() };
+    const res = await get("/api/admin/refresh", env({ CACHE: ckv }), {
+      method: "POST",
+      headers: { cookie: await cookieFor(ADMIN_DB, "Admin"), "content-type": "application/json" },
+      body: JSON.stringify({ folderId: "root" }),
+    });
+    expect(res.status).toBe(200);
+    expect(cacheDelete).toHaveBeenCalledWith("list:root");
+    expect(cacheDelete).toHaveBeenCalledWith("meta:root");
+  });
+
+  it("rejects guests", async () => {
+    const res = await get("/api/admin/refresh", {}, {
+      method: "POST",
+      body: JSON.stringify({ folderId: "root" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("requires a folderId", async () => {
+    const res = await get("/api/admin/refresh", {}, {
+      method: "POST",
+      headers: { cookie: await cookieFor(ADMIN_DB, "Admin"), "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("quota", () => {
   it("serves live storage usage for a session", async () => {
     vi.mocked(drive.getStorageQuota).mockResolvedValueOnce({ limit: "10", usage: "5" });
@@ -510,5 +542,80 @@ describe("quota", () => {
   it("rejects anonymous visitors", async () => {
     const res = await get("/api/quota");
     expect(res.status).toBe(401);
+  });
+});
+
+describe("upload", () => {
+  function stubDriveUploadFetch() {
+    vi.stubGlobal("fetch", async (input: string | URL) => {
+      const url = String(input);
+      if (url.includes("oauth2.googleapis.com/token")) {
+        return new Response(JSON.stringify({ access_token: "t", expires_in: 3600 }), { status: 200 });
+      }
+      if (url.includes("upload/drive/v3/files")) {
+        return new Response(null, { status: 200, headers: { location: "https://up.example/s" } });
+      }
+      return new Response(JSON.stringify({ id: "f1", name: "a.txt" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+  }
+
+  function adminInit(over: { cookie?: string } = {}): { body: FormData; init: RequestInit } {
+    const fd = new FormData();
+    fd.append("file", new File(["halo"], "a.txt", { type: "text/plain" }));
+    return { body: fd, init: { method: "POST", headers: { cookie: over.cookie ?? "" }, body: fd } };
+  }
+
+  it("rejects guests", async () => {
+    const res = await get("/api/upload?folder=root", {}, { method: "POST", body: new FormData() });
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects requests beyond the 95 MiB declared size", async () => {
+    const fd = new FormData();
+    fd.append("file", new File(["halo"], "a.txt", { type: "text/plain" }));
+    const res = await get("/api/upload?folder=root", {}, {
+      method: "POST",
+      headers: { cookie: await cookieFor(ADMIN_DB, "Admin"), "content-length": "1000000000000" },
+      body: fd,
+    });
+    expect(res.status).toBe(413);
+  });
+
+  it("rejects uploads into password-protected folders", async () => {
+    getFolderPassword.mockResolvedValue({
+      folder_id: "root", folder_name: "Secret", hash: "h", recursive: 1,
+      created_by: ADMIN_DB, created_at: 0,
+    });
+    const { init } = adminInit({ cookie: await cookieFor(ADMIN_DB, "Admin") });
+    const res = await get("/api/upload?folder=root", {}, init);
+    expect(res.status).toBe(423);
+  });
+
+  it("rejects uploads when the destination is not a folder", async () => {
+    getMeta.mockResolvedValue({ ...DEFAULT_META, mimeType: "text/plain" });
+    const { init } = adminInit({ cookie: await cookieFor(ADMIN_DB, "Admin") });
+    const res = await get("/api/upload?folder=root", {}, init);
+    expect(res.status).toBe(400);
+  });
+
+  it("uploads as admin, busts the folder cache and logs the action", async () => {
+    stubDriveUploadFetch();
+    const cacheDelete = vi.fn();
+    const ckv = { get: vi.fn(), put: vi.fn(), delete: cacheDelete, list: vi.fn() };
+    const fd = new FormData();
+    fd.append("file", new File(["halo"], "a.txt", { type: "text/plain" }));
+    const res = await get("/api/upload?folder=root", env({ CACHE: ckv }), {
+      method: "POST",
+      headers: { cookie: await cookieFor(ADMIN_DB, "Admin") },
+      body: fd,
+    });
+    expect(res.status).toBe(200);
+    expect(await json(res)).toEqual({ file: { id: "f1", name: "a.txt" } });
+    expect(cacheDelete).toHaveBeenCalledWith("list:root");
+    expect(logActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: "upload" }));
+    vi.unstubAllGlobals();
   });
 });
