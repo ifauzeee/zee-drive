@@ -236,7 +236,6 @@ function Shell({
             Muhammad Ibnu Fauzi
           </a>
         </p>
-        <p className="mono">Penyimpanan: Google Drive · Cache: KV · Data: D1</p>
         <p className="app-footer-quota">
           <QuotaBadge />
         </p>
