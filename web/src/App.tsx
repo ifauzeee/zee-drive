@@ -165,6 +165,16 @@ function Shell({
         </div>
         <div className="wrap topbar-main">
           <div className="topbar-actions">
+            <a
+              className="github-link"
+              href="https://github.com/ifauzeee/zee-drive"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Kode sumber di GitHub"
+              aria-label="Buka repositori GitHub"
+            >
+              <GithubGlyph />
+            </a>
             <button
               className="theme-toggle"
               onClick={toggleTheme}
@@ -183,6 +193,20 @@ function Shell({
           <div id="folder-tree" className={`treebar ${treeOpen ? "open" : ""}`}>
             <div className="tree-scrim" onClick={onTreeToggle} aria-hidden="true" />
             <div className="tree-nav">
+              {me ? (
+                <div className="profile-card" title={me.email}>
+                  {me.picture ? <img src={me.picture} alt="" referrerPolicy="no-referrer" /> : null}
+                  <div className="profile-meta">
+                    <span className="profile-name">{me.name}</span>
+                    {me.admin ? <span className="admin-badge">ADMIN</span> : null}
+                  </div>
+                  <a href="/logout" className="profile-logout" title="Keluar" aria-label="Keluar">
+                    <LogoutGlyph />
+                  </a>
+                </div>
+              ) : (
+                <a className="navlink" href="/auth/login">Masuk</a>
+              )}
               <nav aria-label="Navigasi utama">
                 <a
                   className={`navlink ${path.startsWith("/b/") || path.startsWith("/f/") ? "active" : ""}`}
@@ -203,20 +227,6 @@ function Shell({
               </nav>
               <div className="tree-nav-foot">
                 <PwaInstallButton />
-                {me ? (
-                  <div className="profile-card" title={me.email}>
-                    {me.picture ? <img src={me.picture} alt="" referrerPolicy="no-referrer" /> : null}
-                    <div className="profile-meta">
-                      <span className="profile-name">{me.name}</span>
-                      {me.admin ? <span className="admin-badge">ADMIN</span> : null}
-                    </div>
-                    <a href="/logout" className="profile-logout" title="Keluar" aria-label="Keluar">
-                      <LogoutGlyph />
-                    </a>
-                  </div>
-                ) : (
-                  <a className="navlink" href="/auth/login">Masuk</a>
-                )}
               </div>
             </div>
             {tree}
@@ -236,7 +246,6 @@ function Shell({
             Muhammad Ibnu Fauzi
           </a>
         </p>
-        <p className="mono">Penyimpanan: Google Drive · Cache: KV · Data: D1</p>
         <p className="app-footer-quota">
           <QuotaBadge />
         </p>
@@ -336,6 +345,14 @@ function MoonGlyph() {
       </defs>
       <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" fill="url(#zi-moon)" fillOpacity="0.55" />
       <path d="M17.5 5.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6.6-1.4z" fill="currentColor" stroke="none" opacity="0.8" />
+    </svg>
+  );
+}
+
+function GithubGlyph() {
+  return (
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 2C6.48 2 2 6.58 2 12.2c0 4.5 2.87 8.33 6.84 9.68.5.1.68-.22.68-.49 0-.24-.01-.88-.01-1.72-2.78.61-3.37-1.35-3.37-1.35-.45-1.18-1.11-1.5-1.11-1.5-.9-.63.07-.62.07-.62 1 .07 1.53 1.05 1.53 1.05.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.56-1.14-4.56-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.27 2.75 1.05a9.36 9.36 0 0 1 5 0c1.91-1.32 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.93-2.34 4.8-4.57 5.05.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .27.18.59.69.49A10.2 10.2 0 0 0 22 12.2C22 6.58 17.52 2 12 2z" />
     </svg>
   );
 }

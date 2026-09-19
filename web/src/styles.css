@@ -469,6 +469,10 @@ a.filecard:hover { border-color: var(--line); background: var(--bg-2); text-deco
   color: var(--ink-2); font-size: var(--text-sm); font-weight: 600; cursor: pointer;
 }
 .backlink:hover { color: var(--ink-1); }
+.file-center { max-width: 900px; margin: 0 auto; }
+.file-center .pagehead { text-align: center; }
+.file-center .filenav { justify-content: center; }
+.file-center .detailgrid { text-align: left; }
 .infopanel h2 { margin-bottom: var(--space-3); }
 .actiongrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: var(--space-4); }
 .actiongrid .btn { justify-content: center; }
@@ -843,6 +847,12 @@ a.filecard:hover { border-color: var(--line); background: var(--bg-2); text-deco
 }
 .theme-toggle:hover { color: var(--ink-1); opacity: 0.85; }
 .theme-toggle:active { transform: scale(0.9); }
+.github-link {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 4px; color: var(--ink-2);
+  transition: color 0.15s, opacity 0.15s;
+}
+.github-link:hover { color: var(--ink-1); opacity: 0.85; }
 .theme-icon { display: inline-flex; }
 .theme-icon svg { animation: theme-pop 0.35s ease; }
 @keyframes theme-pop {
@@ -918,7 +928,7 @@ a.filecard:hover { border-color: var(--line); background: var(--bg-2); text-deco
 .treebar {
   position: sticky; top: 88px; align-self: flex-start; flex: none; z-index: 30;
   display: flex; flex-direction: column;
-  max-height: calc(100dvh - 110px);
+  max-height: calc(100dvh - 170px);
 }
 .foldertree {
   position: static; width: 250px; overflow-y: auto;
@@ -929,6 +939,7 @@ a.filecard:hover { border-color: var(--line); background: var(--bg-2); text-deco
   flex: none; width: 250px; margin-right: 20px; padding: 0 4px 12px 0;
   border-bottom: 1px solid var(--line-soft);
 }
+.tree-nav > .profile-card { margin: 0 0 8px; }
 .tree-nav nav { display: flex; flex-direction: column; gap: 2px; }
 .tree-nav .navlink { justify-content: space-between; }
 .tree-nav-foot { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
@@ -1024,12 +1035,14 @@ a.filecard:hover { border-color: var(--line); background: var(--bg-2); text-deco
 
 /* ---------- footer ---------- */
 .app-footer {
-  padding: 20px 0 32px;
+  position: relative; z-index: 40;
+  background: var(--bg-0);
+  padding: 10px 0 14px;
   border-top: 1px solid var(--line-soft);
   color: var(--ink-3); font-size: var(--text-sm); text-align: center;
 }
 .app-footer p { margin: 0; }
-.app-footer p + p { margin-top: 4px; }
+.app-footer p + p { margin-top: 2px; }
 .app-footer .mono { font-family: var(--font-mono); font-size: var(--text-xs); }
 .app-footer-link { color: var(--ink-1); font-weight: 500; text-decoration: none; }
 .app-footer-link:hover { color: var(--primary); }

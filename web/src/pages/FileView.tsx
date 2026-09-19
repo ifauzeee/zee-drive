@@ -157,7 +157,7 @@ export default function FileView({ fileId }: { fileId: string }) {
   );
 
   return (
-    <>
+    <div className="file-center">
       {searchCtx ? (
         <button className="backlink" onClick={() => navigate(`/b/${searchCtx.folderId}`)}>
           ← Kembali ke hasil: “{searchCtx.query}”
@@ -171,17 +171,16 @@ export default function FileView({ fileId }: { fileId: string }) {
       {peers.length > 0 && idx >= 0 ? (
         <div className="filenav">
           <button className="btn ghost" disabled={idx === 0} onClick={() => goPeer(-1)} aria-label="File sebelumnya">
-            ‹ {peers[idx - 1]?.name}
+            ‹
           </button>
           <span className="filenav-count" aria-hidden="true">{idx + 1} / {peers.length}</span>
           <button className="btn ghost" disabled={idx === peers.length - 1} onClick={() => goPeer(1)} aria-label="File berikutnya">
-            {peers[idx + 1]?.name} ›
+            ›
           </button>
         </div>
       ) : null}
       <div className="pagehead">
         <div className="kicker">{kind.toUpperCase()} · {formatBytes(file.size)}</div>
-        <h1 style={{ fontSize: "clamp(22px, 3.4vw, 28px)" }}>{file.name}</h1>
       </div>
 
       <div className="detailgrid two">
@@ -232,7 +231,7 @@ export default function FileView({ fileId }: { fileId: string }) {
           onClose={() => setLightbox(false)}
         />
       ) : null}
-    </>
+    </div>
   );
 }
 
