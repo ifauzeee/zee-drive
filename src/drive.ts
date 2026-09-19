@@ -144,9 +144,9 @@ export async function getAncestors(
 export type SearchResult = { file: DriveFile; crumbs: Crumb[] };
 
 /**
- * Nama seluruh pohon di bawah rootId. Drive tidak punya query "descendant of",
- * jadi lakukan BFS folder (listFolder memakai cache KV yang sudah ada).
- * Result + foldernya dibatasi.
+ * Names the whole tree under rootId. Drive has no "descendant of" query,
+ * so walk it with BFS (listFolder reuses the existing KV cache).
+ * Results and visited folders are capped.
  */
 export async function searchDrive(
   env: AppEnv,
@@ -165,7 +165,7 @@ export async function searchDrive(
   const results: SearchResult[] = [];
   const queue = [rootId];
   let visited = 0;
-  // ponytail: scan dibatasi 20 folder / 40 hasil; naikkan bila arsip sangat dalam.
+  // ponytail: BFS capped at 20 folders / 40 hits; raise if the tree gets deep.
   while (queue.length > 0 && visited < 20 && results.length < 40) {
     const folderId = queue.shift()!;
     visited++;
