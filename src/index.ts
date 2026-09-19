@@ -402,6 +402,7 @@ async function serveFile(c: AppContext, inline: boolean) {
   try {
     const fileId = c.req.param("id") ?? "";
     await requireUnlocked(c.env, fileId, parseCookies(c.req.header("cookie") ?? null));
+    await checkRate(c.env, "fetch", clientIp(c), 300, 60);
     const res = await proxyFile(c.env, fileId, {
       inline,
       range: c.req.header("range") ?? null,
