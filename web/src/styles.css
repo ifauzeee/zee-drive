@@ -929,6 +929,7 @@ a.filecard:hover { border-color: var(--line); background: var(--bg-2); text-deco
   flex: none; width: 250px; margin-right: 20px; padding: 0 4px 12px 0;
   border-bottom: 1px solid var(--line-soft);
 }
+.tree-nav > .profile-card { margin: 0 0 8px; }
 .tree-nav nav { display: flex; flex-direction: column; gap: 2px; }
 .tree-nav .navlink { justify-content: space-between; }
 .tree-nav-foot { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }

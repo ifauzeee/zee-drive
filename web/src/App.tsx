@@ -183,6 +183,20 @@ function Shell({
           <div id="folder-tree" className={`treebar ${treeOpen ? "open" : ""}`}>
             <div className="tree-scrim" onClick={onTreeToggle} aria-hidden="true" />
             <div className="tree-nav">
+              {me ? (
+                <div className="profile-card" title={me.email}>
+                  {me.picture ? <img src={me.picture} alt="" referrerPolicy="no-referrer" /> : null}
+                  <div className="profile-meta">
+                    <span className="profile-name">{me.name}</span>
+                    {me.admin ? <span className="admin-badge">ADMIN</span> : null}
+                  </div>
+                  <a href="/logout" className="profile-logout" title="Keluar" aria-label="Keluar">
+                    <LogoutGlyph />
+                  </a>
+                </div>
+              ) : (
+                <a className="navlink" href="/auth/login">Masuk</a>
+              )}
               <nav aria-label="Navigasi utama">
                 <a
                   className={`navlink ${path.startsWith("/b/") || path.startsWith("/f/") ? "active" : ""}`}
@@ -203,20 +217,6 @@ function Shell({
               </nav>
               <div className="tree-nav-foot">
                 <PwaInstallButton />
-                {me ? (
-                  <div className="profile-card" title={me.email}>
-                    {me.picture ? <img src={me.picture} alt="" referrerPolicy="no-referrer" /> : null}
-                    <div className="profile-meta">
-                      <span className="profile-name">{me.name}</span>
-                      {me.admin ? <span className="admin-badge">ADMIN</span> : null}
-                    </div>
-                    <a href="/logout" className="profile-logout" title="Keluar" aria-label="Keluar">
-                      <LogoutGlyph />
-                    </a>
-                  </div>
-                ) : (
-                  <a className="navlink" href="/auth/login">Masuk</a>
-                )}
               </div>
             </div>
             {tree}
