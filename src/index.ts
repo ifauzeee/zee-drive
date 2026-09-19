@@ -65,10 +65,15 @@ app.use("*", logger());
 
 // Block rute dari perangkat mobile selama perbaikan responsif. HTML mandiri — tanpa
 // ketergantungan aset, admin tetap lolos supaya bisa memeriksa.
+// Share publik (halaman /share/, API /api/s/*, dan byte /s/:token) tetap dibuka: itu
+// halaman mandiri yang harus jalan di HP, bukan bagian dari app utama.
 const MOBILE_UA = /(Mobi|Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini)/i;
+const MOBILE_OPEN_PATHS = /^\/(share\/|api\/s\/|s\/)/;
 app.use("*", async (c, next) => {
   const ua = c.req.header("user-agent") ?? "";
   if (!MOBILE_UA.test(ua)) return next();
+  const path = new URL(c.req.url).pathname;
+  if (MOBILE_OPEN_PATHS.test(path)) return next();
   const cookies = parseCookies(c.req.header("cookie") ?? null);
   const admin = !!cookies[SESSION_COOKIE] &&
     isAdmin((await verifySession(cookies[SESSION_COOKIE], c.env.SESSION_SECRET))?.email ?? "", c.env);
