@@ -406,11 +406,15 @@ async function serveFile(c: AppContext, inline: boolean) {
       inline,
       range: c.req.header("range") ?? null,
     });
-    await logActivity(c.env.DB, {
-      actor: c.get("session").email,
-      action: inline ? "preview" : "download",
-      file_id: fileId,
-    }).catch(() => {});
+    // A partial-range reply is a continued stream in progress (seek/segment)
+    // and was already logged when the 200 started; skip to avoid spamming.
+    if (res.status !== 206) {
+      await logActivity(c.env.DB, {
+        actor: c.get("session").email,
+        action: inline ? "preview" : "download",
+        file_id: fileId,
+      }).catch(() => {});
+    }
     return res;
   } catch (error) {
     return errorJson(c, error);
@@ -685,12 +689,14 @@ app.get("/s/:token", async (c) => {
       inline,
       range: c.req.header("range") ?? null,
     });
-    await logActivity(c.env.DB, {
-      actor: `share:${row.id}`,
-      action: "share.download",
-      file_id: fileId,
-      detail: c.req.query("dl") === "1" ? "dl" : null,
-    }).catch(() => {});
+    if (res.status !== 206) {
+      await logActivity(c.env.DB, {
+        actor: `share:${row.id}`,
+        action: "share.download",
+        file_id: fileId,
+        detail: c.req.query("dl") === "1" ? "dl" : null,
+      }).catch(() => {});
+    }
     return res;
   } catch (error) {
     return errorJson(c, error);
