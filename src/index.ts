@@ -63,12 +63,17 @@ const app = new Hono<{ Bindings: AppEnv; Variables: Vars }>();
 
 app.use("*", logger());
 
-// Block rute dari perangkat mobile selama perbaikan responsif. HTML mandiri — tanpa
-// ketergantungan aset, admin tetap lolos supaya bisa memeriksa.
+// Keep the app off mobile browsers until the responsive pass is done. The
+// standalone pages (share links) are asset-free, and admins pass through. Public
+// share paths (/share/, /api/s/*, and /s/* bytes) stay open: those are
+// self-contained pages that must work on phones, not part of the main app.
 const MOBILE_UA = /(Mobi|Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini)/i;
+const MOBILE_OPEN_PATHS = /^\/(share\/|api\/s\/|s\/)/;
 app.use("*", async (c, next) => {
   const ua = c.req.header("user-agent") ?? "";
   if (!MOBILE_UA.test(ua)) return next();
+  const path = new URL(c.req.url).pathname;
+  if (MOBILE_OPEN_PATHS.test(path)) return next();
   const cookies = parseCookies(c.req.header("cookie") ?? null);
   const admin = !!cookies[SESSION_COOKIE] &&
     isAdmin((await verifySession(cookies[SESSION_COOKIE], c.env.SESSION_SECRET))?.email ?? "", c.env);
@@ -321,7 +326,7 @@ app.get("/api/search", requireSession, async (c) => {
     await checkRate(c.env, "search", clientIp(c), 30, 60);
     const cookies = parseCookies(c.req.header("cookie") ?? null);
     const found = await searchDrive(c.env, q, c.env.ROOT_FOLDER_ID);
-    // Jangan bocorkan isi folder terkunci yang belum dibuka.
+    // Never leak the contents of a locked folder before it is unlocked.
     const results = [];
     for (const hit of found) {
       let locked = false;
@@ -525,7 +530,7 @@ async function publicShareGate(c: AppContext, row: ShareLinkRow): Promise<void> 
   }
 }
 
-// Public: share metadata — file atau folder.
+// Public: share metadata — file or folder.
 app.get("/api/s/:token", async (c) => {
   try {
     await checkRate(c.env, "share-meta", clientIp(c), 30, 60);
@@ -541,7 +546,7 @@ app.get("/api/s/:token", async (c) => {
   }
 });
 
-// Public: unlock — kata sandi share (default) atau kata sandi folder (body.folderId).
+// Public: unlock — share password (default) or folder password (body.folderId).
 app.post("/api/s/:token/unlock", async (c) => {
   try {
     await checkRate(c.env, "share-unlock", `${clientIp(c)}:${c.req.param("token")}`, 10, 300);
@@ -581,7 +586,7 @@ app.post("/api/s/:token/unlock", async (c) => {
   }
 });
 
-// Public: daftar isi folder di dalam folder share.
+// Public: list a folder inside a folder share.
 app.get("/api/s/:token/files", async (c) => {
   try {
     await checkRate(c.env, "share-files", `${clientIp(c)}:${c.req.param("token")}`, 30, 60);
@@ -600,7 +605,8 @@ app.get("/api/s/:token/files", async (c) => {
   }
 });
 
-// Public: byte file. Tanpa ?id token harus share file; dengan ?id file di dalam folder share.
+// Public: file bytes. Without ?id the token must be a file share; with ?id, a
+// file inside a folder share.
 app.get("/s/:token", async (c) => {
   try {
     await checkRate(c.env, "share-dl", `${clientIp(c)}:${c.req.param("token")}`, 10, 60);
@@ -616,7 +622,11 @@ app.get("/s/:token", async (c) => {
       fileId = target;
     }
     await requireUnlocked(c.env, fileId, parseCookies(c.req.header("cookie") ?? null));
-    await touchShareLink(c.env.DB, row.id);
+    const changes = await touchShareLink(c.env.DB, row.id);
+    if (changes === 0) {
+      // The cap filled or the share was revoked right as the stream started.
+      throw new HttpError(410, "Batas unduhan share link tercapai.");
+    }
     const inline = c.req.query("dl") === "1" ? false : row.download_only !== 1;
     const res = await proxyFile(c.env, fileId, {
       inline,
