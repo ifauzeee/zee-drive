@@ -217,6 +217,16 @@ describe("session", () => {
       expect.any(Number),
     );
   });
+
+  it("sets the session cookie with SameSite=Strict", async () => {
+    const res = await get("/auth/guest");
+    expect(res.headers.get("set-cookie")).toContain("SameSite=Strict");
+  });
+
+  it("keeps the oauth state cookie SameSite=Lax", async () => {
+    const res = await get("/auth/login");
+    expect(res.headers.get("set-cookie")).toContain("SameSite=Lax");
+  });
 });
 
 describe("maintenance mode", () => {
@@ -272,6 +282,15 @@ describe("activity logging on file access", () => {
       expect.objectContaining({ actor: "share:s1", action: "share.download", file_id: "F1" }),
     );
   });
+
+  it("does not log partial-range previews", async () => {
+    vi.mocked(drive.proxyFile).mockResolvedValueOnce(new Response("bytes", { status: 206 }));
+    const res = await get("/p/F1", {}, {
+      headers: { cookie: await cookieFor(ADMIN_DB, "Admin"), range: "bytes=0-99" },
+    });
+    expect(res.status).toBe(206);
+    expect(logActivity).not.toHaveBeenCalled();
+  });
 });
 
 describe("mobile access", () => {
@@ -313,6 +332,27 @@ describe("download rate limit", () => {
 
   it("serves downloads when CACHE is unbound", async () => {
     const res = await get("/d/F1", {}, { headers: { cookie: await cookieFor(ADMIN_DB, "Admin") } });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("root boundary", () => {
+  it("denies access to folders outside ROOT_FOLDER_ID", async () => {
+    getAncestors.mockResolvedValueOnce(["OUT"]);
+    const res = await get("/api/files?folder=OUT", {}, { headers: { cookie: await cookieFor(ADMIN_DB, "Admin") } });
+    expect(res.status).toBe(404);
+  });
+
+  it("denies meta lookup for files outside the root tree", async () => {
+    getAncestors.mockResolvedValueOnce(["OUT"]);
+    const res = await get("/api/meta/OUTID", {}, { headers: { cookie: await cookieFor(ADMIN_DB, "Admin") } });
+    expect(res.status).toBe(404);
+    expect(await json(res)).toEqual({ error: "Berkas tidak ditemukan." });
+  });
+
+  it("keeps files inside the root tree reachable", async () => {
+    getAncestors.mockResolvedValueOnce(["root"]);
+    const res = await get("/api/files?folder=root", {}, { headers: { cookie: await cookieFor(ADMIN_DB, "Admin") } });
     expect(res.status).toBe(200);
   });
 });

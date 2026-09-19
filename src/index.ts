@@ -135,12 +135,12 @@ function secureOrigin(url: string): boolean {
   return new URL(url).protocol === "https:";
 }
 
-function cookieOpts(c: AppContext) {
+function cookieOpts(c: AppContext, sameSite: "Lax" | "Strict" = "Strict") {
   return {
     maxAge: SESSION_MAX_AGE,
     httpOnly: true,
     secure: secureOrigin(c.req.url),
-    sameSite: "Lax",
+    sameSite,
   } as const;
 }
 
@@ -205,7 +205,7 @@ app.get("/auth/login", (c) => {
   const headers = new Headers({ location: url, "cache-control": "no-store" });
   headers.append(
     "set-cookie",
-    serializeCookie(STATE_COOKIE, state, { ...cookieOpts(c), maxAge: 600 }),
+    serializeCookie(STATE_COOKIE, state, { ...cookieOpts(c, "Lax"), maxAge: 600 }),
   );
   return new Response(null, { status: 302, headers });
 });
@@ -219,7 +219,7 @@ async function finishLogin(c: AppContext): Promise<Response> {
   const headers = new Headers({ location: "/", "cache-control": "no-store" });
   headers.append(
     "set-cookie",
-    serializeCookie(STATE_COOKIE, "", { ...cookieOpts(c), maxAge: 0 }),
+    serializeCookie(STATE_COOKIE, "", { ...cookieOpts(c, "Lax"), maxAge: 0 }),
   );
 
   if (!code || !state || state !== cookies[STATE_COOKIE]) {
@@ -407,11 +407,15 @@ async function serveFile(c: AppContext, inline: boolean) {
       inline,
       range: c.req.header("range") ?? null,
     });
-    await logActivity(c.env.DB, {
-      actor: c.get("session").email,
-      action: inline ? "preview" : "download",
-      file_id: fileId,
-    }).catch(() => {});
+    // A partial-range reply is a continued stream in progress (seek/segment)
+    // and was already logged when the 200 started; skip to avoid spamming.
+    if (res.status !== 206) {
+      await logActivity(c.env.DB, {
+        actor: c.get("session").email,
+        action: inline ? "preview" : "download",
+        file_id: fileId,
+      }).catch(() => {});
+    }
     return res;
   } catch (error) {
     return errorJson(c, error);
@@ -686,12 +690,14 @@ app.get("/s/:token", async (c) => {
       inline,
       range: c.req.header("range") ?? null,
     });
-    await logActivity(c.env.DB, {
-      actor: `share:${row.id}`,
-      action: "share.download",
-      file_id: fileId,
-      detail: c.req.query("dl") === "1" ? "dl" : null,
-    }).catch(() => {});
+    if (res.status !== 206) {
+      await logActivity(c.env.DB, {
+        actor: `share:${row.id}`,
+        action: "share.download",
+        file_id: fileId,
+        detail: c.req.query("dl") === "1" ? "dl" : null,
+      }).catch(() => {});
+    }
     return res;
   } catch (error) {
     return errorJson(c, error);
