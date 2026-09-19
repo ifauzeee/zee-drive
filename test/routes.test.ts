@@ -241,6 +241,67 @@ describe("maintenance mode", () => {
   });
 });
 
+describe("activity logging on file access", () => {
+  it("logs a download with the session actor", async () => {
+    const cookie = await cookieFor(ADMIN_DB, "Admin");
+    const res = await get("/d/F1", {}, { headers: { cookie } });
+    expect(res.status).toBe(200);
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ actor: ADMIN_DB, action: "download", file_id: "F1" }),
+    );
+  });
+
+  it("logs a preview with action preview", async () => {
+    const cookie = await cookieFor(ADMIN_DB, "Admin");
+    const res = await get("/p/F1", {}, { headers: { cookie } });
+    expect(res.status).toBe(200);
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ actor: ADMIN_DB, action: "preview", file_id: "F1" }),
+    );
+  });
+
+  it("logs public share downloads under share:<sid>", async () => {
+    getShareLink.mockResolvedValueOnce(shareRow("s1", { file_id: "F1" }));
+    const token = await signJson({ sid: "s1", fid: "F1" }, SECRETS.SHARE_SECRET_KEY);
+    const res = await get(`/s/${token}`);
+    expect(res.status).toBe(200);
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ actor: "share:s1", action: "share.download", file_id: "F1" }),
+    );
+  });
+});
+
+describe("mobile access", () => {
+  const MOBILE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15";
+
+  it("blocks the app from mobile browsers", async () => {
+    const res = await get("/api/files", {}, { headers: { "user-agent": MOBILE_UA } });
+    expect(res.status).toBe(503);
+    expect(res.headers.get("content-type")).toContain("text/html");
+  });
+
+  it("lets admin sessions through on mobile", async () => {
+    const res = await get("/api/files", {}, {
+      headers: { "user-agent": MOBILE_UA, cookie: await cookieFor(ADMIN_DB, "Admin") },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("keeps public share API open on mobile", async () => {
+    getShareLink.mockResolvedValueOnce(null);
+    const res = await get("/api/s/abc123", {}, { headers: { "user-agent": MOBILE_UA } });
+    expect(res.status).toBe(410);
+  });
+
+  it("keeps desktop browsers on the app", async () => {
+    const res = await get("/api/config", {}, { headers: { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" } });
+    expect(res.status).toBe(200);
+  });
+});
+
 describe("folder unlock", () => {
   async function lockedRow() {
     return {

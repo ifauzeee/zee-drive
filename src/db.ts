@@ -74,8 +74,13 @@ export async function getShareLink(db: D1Database, id: string): Promise<ShareLin
 }
 
 export async function touchShareLink(db: D1Database, id: string): Promise<number> {
+  // Atomic: the use increment is also bounded by max_uses/revoked at the SQL
+  // level, so concurrent requests cannot overshoot (check-then-add is no TOCTOU).
   const result = await db
-    .prepare(`UPDATE share_links SET uses = uses + 1 WHERE id = ?`)
+    .prepare(
+      `UPDATE share_links SET uses = uses + 1
+       WHERE id = ? AND revoked = 0 AND (max_uses IS NULL OR uses < max_uses)`,
+    )
     .bind(id)
     .run();
   return result.meta.changes ?? 0;

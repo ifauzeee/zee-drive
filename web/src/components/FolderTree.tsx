@@ -53,14 +53,14 @@ export default function FolderTree({
     }
   };
 
-  // Auto-expand jalur folder aktif (dan muat children root saat masuk).
+  // Auto-expand the active folder path (and load the root's children on mount).
   useEffect(() => {
     if (!crumbs?.length) return;
     for (const c of crumbs) void load(c.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId, crumbs]);
 
-  // Reset tree saat kembali ke root: subfolder yang terbuka ikut tertutup.
+  // Reset the tree when back at root: open subfolders collapse too.
   useEffect(() => {
     if (activeId !== rootId) return;
     setNodes({});
@@ -112,7 +112,7 @@ export default function FolderTree({
                   await api.unlock(id, v);
                   await load(id, true);
                 } catch {
-                  /* tetap tampil — tidak ada pesan per-node */
+                  /* stays visible — no per-node message */
                 }
               }}
             >
