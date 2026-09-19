@@ -302,6 +302,27 @@ describe("mobile access", () => {
   });
 });
 
+describe("root boundary", () => {
+  it("denies access to folders outside ROOT_FOLDER_ID", async () => {
+    getAncestors.mockResolvedValueOnce(["OUT"]);
+    const res = await get("/api/files?folder=OUT", {}, { headers: { cookie: await cookieFor(ADMIN_DB, "Admin") } });
+    expect(res.status).toBe(404);
+  });
+
+  it("denies meta lookup for files outside the root tree", async () => {
+    getAncestors.mockResolvedValueOnce(["OUT"]);
+    const res = await get("/api/meta/OUTID", {}, { headers: { cookie: await cookieFor(ADMIN_DB, "Admin") } });
+    expect(res.status).toBe(404);
+    expect(await json(res)).toEqual({ error: "Berkas tidak ditemukan." });
+  });
+
+  it("keeps files inside the root tree reachable", async () => {
+    getAncestors.mockResolvedValueOnce(["root"]);
+    const res = await get("/api/files?folder=root", {}, { headers: { cookie: await cookieFor(ADMIN_DB, "Admin") } });
+    expect(res.status).toBe(200);
+  });
+});
+
 describe("folder unlock", () => {
   async function lockedRow() {
     return {

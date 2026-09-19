@@ -2,7 +2,7 @@ import type { AppEnv } from "./env";
 import { getAncestors, getMeta, isFolder } from "./drive";
 import { getFolderPassword } from "./db";
 import { hashUnlockToken } from "./unlock";
-import { LockedError } from "./errors";
+import { HttpError, LockedError } from "./errors";
 
 /**
  * Folder-password gate.
@@ -18,6 +18,13 @@ export async function requireUnlocked(
   const meta = await getMeta(env, fileId);
   const anchor = isFolder(meta) ? fileId : (meta.parents?.[0] ?? env.ROOT_FOLDER_ID);
   const chain = await getAncestors(env, anchor, env.ROOT_FOLDER_ID);
+
+  // Everything behind the lock gate must live under ROOT_FOLDER_ID. A file or
+  // folder whose ancestor chain never reaches the root is outside the archive
+  // — 404 so we neither serve nor confirm its existence.
+  if (!chain.includes(env.ROOT_FOLDER_ID)) {
+    throw new HttpError(404, "Berkas tidak ditemukan.");
+  }
 
   for (const folderId of chain) {
     const row = await getFolderPassword(env.DB, folderId);
