@@ -321,6 +321,21 @@ describe("mobile access", () => {
   });
 });
 
+describe("download rate limit", () => {
+  it("rejects a client past the per-IP fetch cap", async () => {
+    const ckv = { get: vi.fn().mockResolvedValue("1000"), put: vi.fn(), delete: vi.fn(), list: vi.fn() };
+    const res = await get("/d/F1", env({ CACHE: ckv }), {
+      headers: { cookie: await cookieFor(ADMIN_DB, "Admin") },
+    });
+    expect(res.status).toBe(429);
+  });
+
+  it("serves downloads when CACHE is unbound", async () => {
+    const res = await get("/d/F1", {}, { headers: { cookie: await cookieFor(ADMIN_DB, "Admin") } });
+    expect(res.status).toBe(200);
+  });
+});
+
 describe("root boundary", () => {
   it("denies access to folders outside ROOT_FOLDER_ID", async () => {
     getAncestors.mockResolvedValueOnce(["OUT"]);
