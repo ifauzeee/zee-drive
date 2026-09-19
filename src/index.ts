@@ -63,10 +63,10 @@ const app = new Hono<{ Bindings: AppEnv; Variables: Vars }>();
 
 app.use("*", logger());
 
-// Block rute dari perangkat mobile selama perbaikan responsif. HTML mandiri — tanpa
-// ketergantungan aset, admin tetap lolos supaya bisa memeriksa.
-// Share publik (halaman /share/, API /api/s/*, dan byte /s/:token) tetap dibuka: itu
-// halaman mandiri yang harus jalan di HP, bukan bagian dari app utama.
+// Keep the app off mobile browsers until the responsive pass is done. The
+// standalone pages (share links) are asset-free, and admins pass through. Public
+// share paths (/share/, /api/s/*, and /s/* bytes) stay open: those are
+// self-contained pages that must work on phones, not part of the main app.
 const MOBILE_UA = /(Mobi|Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini)/i;
 const MOBILE_OPEN_PATHS = /^\/(share\/|api\/s\/|s\/)/;
 app.use("*", async (c, next) => {
