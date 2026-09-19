@@ -326,7 +326,7 @@ app.get("/api/search", requireSession, async (c) => {
     await checkRate(c.env, "search", clientIp(c), 30, 60);
     const cookies = parseCookies(c.req.header("cookie") ?? null);
     const found = await searchDrive(c.env, q, c.env.ROOT_FOLDER_ID);
-    // Jangan bocorkan isi folder terkunci yang belum dibuka.
+    // Never leak the contents of a locked folder before it is unlocked.
     const results = [];
     for (const hit of found) {
       let locked = false;
@@ -524,7 +524,7 @@ async function publicShareGate(c: AppContext, row: ShareLinkRow): Promise<void> 
   }
 }
 
-// Public: share metadata — file atau folder.
+// Public: share metadata — file or folder.
 app.get("/api/s/:token", async (c) => {
   try {
     await checkRate(c.env, "share-meta", clientIp(c), 30, 60);
@@ -540,7 +540,7 @@ app.get("/api/s/:token", async (c) => {
   }
 });
 
-// Public: unlock — kata sandi share (default) atau kata sandi folder (body.folderId).
+// Public: unlock — share password (default) or folder password (body.folderId).
 app.post("/api/s/:token/unlock", async (c) => {
   try {
     await checkRate(c.env, "share-unlock", `${clientIp(c)}:${c.req.param("token")}`, 10, 300);
@@ -580,7 +580,7 @@ app.post("/api/s/:token/unlock", async (c) => {
   }
 });
 
-// Public: daftar isi folder di dalam folder share.
+// Public: list a folder inside a folder share.
 app.get("/api/s/:token/files", async (c) => {
   try {
     await checkRate(c.env, "share-files", `${clientIp(c)}:${c.req.param("token")}`, 30, 60);
@@ -599,7 +599,8 @@ app.get("/api/s/:token/files", async (c) => {
   }
 });
 
-// Public: byte file. Tanpa ?id token harus share file; dengan ?id file di dalam folder share.
+// Public: file bytes. Without ?id the token must be a file share; with ?id, a
+// file inside a folder share.
 app.get("/s/:token", async (c) => {
   try {
     await checkRate(c.env, "share-dl", `${clientIp(c)}:${c.req.param("token")}`, 10, 60);
