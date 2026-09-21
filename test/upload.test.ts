@@ -67,7 +67,7 @@ describe("uploadToDrive", () => {
     });
   });
 
-  it("caps uploads at 95 MiB", () => {
-    expect(MAX_UPLOAD_BYTES).toBe(95 * 1024 * 1024);
+  it("caps uploads at 75 MiB", () => {
+    expect(MAX_UPLOAD_BYTES).toBe(75 * 1024 * 1024);
   });
 });

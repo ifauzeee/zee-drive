@@ -1,7 +1,14 @@
 import type { AppEnv } from "./env";
 import { HttpError } from "./errors";
 
-/** Fixed-window counter in KV. No-op when CACHE is unbound. */
+/**
+ * Fixed-window counter in KV. No-op when CACHE is unbound.
+ *
+ * ponytail: read-then-write is not atomic and KV is eventually consistent
+ * across edge locations (~60s), so parallel bursts can overshoot the limit.
+ * Hard anti-brute-force needs Cloudflare's atomic Rate Limiting binding or a
+ * per-key atomic counter (D1 single UPDATE) instead of KV.
+ */
 export async function checkRate(
   env: AppEnv,
   scope: string,

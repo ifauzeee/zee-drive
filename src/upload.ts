@@ -2,7 +2,9 @@ import { getAccessToken } from "./drive";
 import { HttpError } from "./errors";
 import type { AppEnv } from "./env";
 
-export const MAX_UPLOAD_BYTES = 95 * 1024 * 1024;
+// Ballpark limit for the Workers free tier (100 MB request body cap) minus
+// multipart/form-data overhead, leaving headroom for concurrent large uploads.
+export const MAX_UPLOAD_BYTES = 75 * 1024 * 1024;
 
 export type UploadedFile = { id: string; name: string };
 
@@ -31,7 +33,8 @@ export async function uploadToDrive(
   );
   if (!create.ok) {
     const detail = await create.text();
-    throw new HttpError(502, `Drive menolak upload (${create.status}): ${detail.slice(0, 200)}`);
+    console.error(`Drive reject upload create (${create.status}):`, detail.slice(0, 200));
+    throw new HttpError(502, "Gagal mengunggah ke Google Drive.");
   }
   const uploadUrl = create.headers.get("location");
   if (!uploadUrl) throw new HttpError(502, "Google tidak memberikan URL upload.");
@@ -43,7 +46,8 @@ export async function uploadToDrive(
   });
   if (!put.ok) {
     const detail = await put.text();
-    throw new HttpError(502, `Upload gagal (${put.status}): ${detail.slice(0, 200)}`);
+    console.error(`Drive reject upload put (${put.status}):`, detail.slice(0, 200));
+    throw new HttpError(502, "Gagal mengunggah ke Google Drive.");
   }
 
   const result = (await put.json()) as { id: string; name: string };

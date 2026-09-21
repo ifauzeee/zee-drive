@@ -212,6 +212,7 @@ input, select { font: inherit; }
   flex: none; display: inline-flex; align-items: center; justify-content: center;
   width: 30px; height: 30px; border-radius: var(--radius-full);
   color: var(--ink-3); text-decoration: none; transition: background 0.15s, color 0.15s;
+  border: none; background: none; padding: 0; cursor: pointer; font: inherit;
 }
 .profile-logout:hover { color: var(--danger, red); background: var(--bg-2); text-decoration: none; }
 .install-link {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FOLDER_MIME, listFolder } from "../src/drive";
+import { FOLDER_MIME, listFolder, proxyFile } from "../src/drive";
 import { kindOf } from "../web/src/api";
 
 describe("drive classification", () => {
@@ -57,5 +57,57 @@ describe("listFolder pagination", () => {
     stubDriveFetch(10);
     const files = await listFolder(driveEnv as never, "root");
     expect(files).toHaveLength(4);
+  });
+
+  it("rejects folder ids with characters outside drive id charset", async () => {
+    stubDriveFetch(1);
+    await expect(listFolder(driveEnv as never, "1AbC' OR 1=1")).rejects.toMatchObject({ status: 400 });
+  });
+});
+
+describe("proxyFile XSS hardening", () => {
+  function stubMediaFetch(mime: string) {
+    vi.stubGlobal("fetch", async (input: string | URL) => {
+      const url = String(input);
+      if (url.includes("oauth2.googleapis.com/token")) {
+        return new Response(JSON.stringify({ access_token: "t", expires_in: 3600 }), { status: 200 });
+      }
+      if (url.includes("alt=media")) {
+        return new Response("<payload/>", {
+          status: 200,
+          headers: { "content-type": mime, "content-length": "13", "accept-ranges": "bytes" },
+        });
+      }
+      // getMeta: single file endpoint.
+      const id = url.includes("/files/") ? url.split("/files/")[1]!.split("?")[0] : "F1";
+      return new Response(JSON.stringify({ id, name: `f.${mime.split("/")[1]}`, mimeType: mime, parents: ["P"] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("serves text/html as attachment even when preview is requested", async () => {
+    stubMediaFetch("text/html");
+    const res = await proxyFile(driveEnv as never, "H1", { inline: true });
+    expect(res.headers.get("content-disposition")).toContain("attachment");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+  });
+
+  it("serves svg as attachment even when preview is requested", async () => {
+    stubMediaFetch("image/svg+xml");
+    const res = await proxyFile(driveEnv as never, "S1", { inline: true });
+    expect(res.headers.get("content-disposition")).toContain("attachment");
+  });
+
+  it("keeps pdf inline for preview", async () => {
+    stubMediaFetch("application/pdf");
+    const res = await proxyFile(driveEnv as never, "P1", { inline: true });
+    expect(res.headers.get("content-disposition")).toContain("inline");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
   });
 });

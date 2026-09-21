@@ -72,6 +72,8 @@ export function randomId(bytes = 12): string {
 
 // PBKDF2-SHA256 — 100k iterations, the Workers runtime cap (>=100001 throws NotSupportedError).
 // bcrypt unavailable in Workers without deps.
+// ponytail: iteration count is baked into every hash string, so bumps stay valid —
+// raising PBKDF2_ITER only affects newly-created hashes; old ones keep verifying.
 const PBKDF2_ITER = 100_000;
 
 export async function hashPassword(password: string): Promise<string> {
