@@ -165,7 +165,8 @@ app.onError((error, c) => errorJson(c, error));
 app.use("/api/*", async (c, next) => {
   const missing = missingEnv(c.env as Partial<AppEnv>);
   if (missing.length > 0) {
-    return c.json({ error: `Konfigurasi belum lengkap: ${missing.join(", ")}` }, 500);
+    console.error("Missing env vars:", missing.join(", "));
+    return c.json({ error: "Konfigurasi server belum lengkap." }, 500);
   }
   if (await maintenanceActive(c.env) && !(await canBypassMaintenance(c))) {
     return c.json({ error: "Sedang pemeliharaan. Coba lagi nanti." }, 503);
@@ -192,7 +193,7 @@ app.get("/api/config", async (c) => {
   return c.json({
     appName: c.env.APP_NAME || "Zee-Drive",
     rootFolderId: c.env.ROOT_FOLDER_ID,
-    guestLogin: guestSetting !== "0",
+    guestLogin: guestSetting === "1",
   });
 });
 
@@ -250,7 +251,7 @@ app.get("/auth/callback", (c) => finishLogin(c));
 // Guest login: browse + download everything, no admin capabilities.
 app.get("/auth/guest", async (c) => {
   const guestSetting = await getSetting(c.env.DB, "guest");
-  if (guestSetting === "0") {
+  if (guestSetting !== "1") {
     return new Response("Login tamu dinonaktifkan oleh admin.", { status: 403 });
   }
   const session = newGuestSession();
@@ -262,7 +263,7 @@ app.get("/auth/guest", async (c) => {
   return new Response(null, { status: 302, headers });
 });
 
-app.get("/logout", async (c) => {
+app.post("/logout", async (c) => {
   const cookies = parseCookies(c.req.header("cookie") ?? null);
   const session = await verifySession(cookies[SESSION_COOKIE], c.env);
   if (session) {
@@ -487,7 +488,7 @@ app.post("/api/share", requireAdmin, async (c) => {
     });
 
     const token = await signJson(
-      { sid: id, fid: meta.id, dl: body.downloadOnly === true ? 1 : undefined, exp: expiresAt ?? undefined },
+      { sid: id, fid: meta.id, exp: expiresAt ?? undefined },
       c.env.SHARE_SECRET_KEY,
     );
     await logActivity(c.env.DB, {
@@ -521,7 +522,7 @@ app.post("/api/share/revoke", requireAdmin, async (c) => {
   return c.json({ ok });
 });
 
-// Admin: upload a file into a Drive folder via the worker (cap 95 MiB).
+// Admin: upload a file into a Drive folder via the worker.
 app.post("/api/upload", requireAdmin, async (c) => {
   const folderId = c.req.query("folder") || c.env.ROOT_FOLDER_ID;
 
@@ -680,16 +681,23 @@ app.get("/s/:token", async (c) => {
       fileId = target;
     }
     await requireUnlocked(c.env, fileId, parseCookies(c.req.header("cookie") ?? null));
-    const changes = await touchShareLink(c.env.DB, row.id);
-    if (changes === 0) {
-      // The cap filled or the share was revoked right as the stream started.
-      throw new HttpError(410, "Batas unduhan share link tercapai.");
-    }
+    
+    // Don't increment uses until we know if this is a full download or range request
     const inline = c.req.query("dl") === "1" ? false : row.download_only !== 1;
     const res = await proxyFile(c.env, fileId, {
       inline,
       range: c.req.header("range") ?? null,
     });
+    
+    // Only increment uses for full downloads (status 200), not for range requests (206)
+    // This prevents video streaming from exhausting share link usage limit
+    if (res.status === 200) {
+      const changes = await touchShareLink(c.env.DB, row.id);
+      if (changes === 0) {
+        throw new HttpError(410, "Batas unduhan share link tercapai.");
+      }
+    }
+    
     if (res.status !== 206) {
       await logActivity(c.env.DB, {
         actor: `share:${row.id}`,
@@ -813,7 +821,7 @@ app.get("/api/admin/config", requireAdmin, async (c) => {
       rootFolderId: c.env.ROOT_FOLDER_ID,
       cacheTtl: Number(c.env.CACHE_TTL_SECONDS ?? "300"),
       maintenance: maintenance === "1",
-      guest: guest !== "0",
+      guest: guest === "1",
     },
   });
 });
@@ -849,7 +857,9 @@ app.get("/api/admin/activity", requireAdmin, async (c) => {
     const rows = await listActivity(c.env.DB, 1000);
     const esc = (v: unknown) => {
       const s = String(v ?? "");
-      return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      // Neutralize spreadsheet formula injection (=, +, -, @, tab, CR).
+      const guarded = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+      return /[",\r\n]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded;
     };
     const csv = [
       ["waktu", "aktor", "aksi", "file", "detail"],
@@ -886,7 +896,7 @@ app.get("*", async (c) => {
   const headers = new Headers(asset.headers);
   headers.set(
     "content-security-policy",
-    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
       "font-src 'self' https://fonts.gstatic.com; " +
       "img-src 'self' data: https://lh3.googleusercontent.com https://drive.google.com; " +
       "media-src 'self' blob:; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; " +

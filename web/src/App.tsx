@@ -200,9 +200,19 @@ function Shell({
                     <span className="profile-name">{me.name}</span>
                     {me.admin ? <span className="admin-badge">ADMIN</span> : null}
                   </div>
-                  <a href="/logout" className="profile-logout" title="Keluar" aria-label="Keluar">
+                  <button
+                    type="button"
+                    className="profile-logout"
+                    title="Keluar"
+                    aria-label="Keluar"
+                    onClick={() => {
+                      void fetch("/logout", { method: "POST", credentials: "same-origin" }).finally(() => {
+                        window.location.href = "/login";
+                      });
+                    }}
+                  >
                     <LogoutGlyph />
-                  </a>
+                  </button>
                 </div>
               ) : (
                 <a className="navlink" href="/auth/login">Masuk</a>

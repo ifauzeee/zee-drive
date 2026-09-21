@@ -123,6 +123,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   getSetting.mockResolvedValue(null);
   getFolderPassword.mockResolvedValue(null);
+  // Reset the once-queue too: a test that queues mockResolvedValueOnce but never
+  // reaches getShareLink (e.g. an invalid-token 410) would otherwise leak that
+  // value into the next test that does call it.
+  getShareLink.mockReset();
+  getShareLink.mockResolvedValue(null);
   getSession.mockImplementation(async (_db: D1Database, jti: string) => ({
     jti,
     email: activeSessionEmail,
@@ -142,22 +147,31 @@ describe("missing env guard", () => {
     const res = await get("/api/config", { GOOGLE_CLIENT_ID: undefined });
     expect(res.status).toBe(500);
     expect(await res.json()).toMatchObject({
-      error: expect.stringContaining("Konfigurasi belum lengkap"),
+      error: expect.stringContaining("Konfigurasi server belum lengkap"),
     });
+  });
+
+  it("does not leak internal env var names to client", async () => {
+    const res = await get("/api/config", { GOOGLE_CLIENT_ID: undefined });
+    const body = await res.json();
+    // Should not expose which exact vars are missing in production
+    expect(JSON.stringify(body)).not.toContain("GOOGLE_CLIENT_SECRET");
+    expect(JSON.stringify(body)).not.toContain("SESSION_SECRET");
+    expect(JSON.stringify(body)).not.toContain("SHARE_SECRET_KEY");
   });
 });
 
 describe("public config", () => {
-  it("returns app name + guest enabled by default", async () => {
+  it("returns app name + guest disabled by default", async () => {
     const res = await get("/api/config");
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ appName: "Zee-Drive", guestLogin: true });
+    expect(await res.json()).toMatchObject({ appName: "Zee-Drive", guestLogin: false });
   });
 
-  it("respects guest=0 setting", async () => {
-    getSetting.mockResolvedValueOnce(null).mockResolvedValueOnce("0");
+  it("enables guest login only when explicitly set to 1", async () => {
+    getSetting.mockResolvedValueOnce("0").mockResolvedValueOnce("1");
     const res = await get("/api/config");
-    expect(await res.json()).toMatchObject({ guestLogin: false });
+    expect(await res.json()).toMatchObject({ guestLogin: true });
   });
 });
 
@@ -198,7 +212,7 @@ describe("session", () => {
 
   it("revokes the session row on logout", async () => {
     const cookie = await cookieFor(ADMIN_DB, "Admin");
-    const res = await get("/logout", {}, { headers: { cookie } });
+    const res = await get("/logout", {}, { method: "POST", headers: { cookie } });
     expect(res.status).toBe(302);
     expect(db.revokeSession).toHaveBeenCalled();
     expect(logActivity).toHaveBeenCalledWith(
@@ -208,6 +222,7 @@ describe("session", () => {
   });
 
   it("registers a session row for guest logins", async () => {
+    getSetting.mockResolvedValue("1");
     const res = await get("/auth/guest");
     expect(res.status).toBe(302);
     expect(db.createSession).toHaveBeenCalledWith(
@@ -218,7 +233,14 @@ describe("session", () => {
     );
   });
 
+  it("blocks guest login by default without an explicit setting", async () => {
+    const res = await get("/auth/guest");
+    expect(res.status).toBe(403);
+    expect(db.createSession).not.toHaveBeenCalled();
+  });
+
   it("sets the session cookie with SameSite=Strict", async () => {
+    getSetting.mockResolvedValue("1");
     const res = await get("/auth/guest");
     expect(res.headers.get("set-cookie")).toContain("SameSite=Strict");
   });
@@ -413,6 +435,36 @@ describe("folder unlock", () => {
 });
 
 describe("share links", () => {
+  describe("max_uses counter behavior", () => {
+    it("increments uses only on full download (200), not on range requests (206)", async () => {
+      const ckv = { get: vi.fn().mockResolvedValue("0"), put: vi.fn(), delete: vi.fn(), list: vi.fn() };
+
+      const token = await signJson({ sid: "s_max_test", fid: "f_for_max" }, SECRETS.SHARE_SECRET_KEY);
+
+      // Valid, non-expired, under-cap share row for every lookup in this test.
+      getShareLink.mockResolvedValue(shareRow("s_max_test", { file_id: "f_for_max", max_uses: 3, uses: 0 }));
+      // clearAllMocks() in beforeEach wipes the default impl; restore it.
+      vi.mocked(db.touchShareLink).mockResolvedValue(1);
+      const proxyFile = vi.mocked(drive.proxyFile);
+
+      // Full download (200) -> increments once.
+      proxyFile.mockResolvedValueOnce(new Response("bytes", { status: 200 }));
+      const full = await get(`/s/${token}`, env({ CACHE: ckv }));
+      expect(full.status).toBe(200);
+      expect(db.touchShareLink).toHaveBeenCalledTimes(1);
+
+      vi.mocked(db.touchShareLink).mockClear();
+
+      // Range requests (206) -> never increment, no matter how many segments.
+      for (const range of ["bytes=0-99", "bytes=100-199", "bytes=200-299"]) {
+        proxyFile.mockResolvedValueOnce(new Response("partial", { status: 206 }));
+        const partial = await get(`/s/${token}`, env({ CACHE: ckv }), { headers: { range } });
+        expect(partial.status).toBe(206);
+      }
+      expect(db.touchShareLink).not.toHaveBeenCalled();
+    });
+  });
+
   it("rejects an expired token with 410", async () => {
     const token = await signJson(
       { sid: "s1", fid: "f1", exp: Math.floor(Date.now() / 1000) - 10 },
@@ -552,6 +604,18 @@ describe("admin activity csv", () => {
     const text = await res.text();
     expect(text).toContain("waktu,aktor,aksi,file,detail");
   });
+
+  it("neutralizes spreadsheet formula injection in cells", async () => {
+    vi.mocked(db.listActivity).mockResolvedValue([
+      { id: 1, ts: 0, actor: "=HYPERLINK(\"https://evil\")", action: "download", file_id: "=cmd", detail: "+x" },
+    ]);
+    const res = await get("/api/admin/activity?format=csv", {}, { headers: { cookie: await cookieFor(ADMIN_DB, "Admin") } });
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toContain("'=HYPERLINK");
+    expect(text).toContain("'=cmd");
+    expect(text).toContain("'+x");
+  });
 });
 
 describe("admin refresh", () => {
@@ -628,7 +692,7 @@ describe("upload", () => {
     expect(res.status).toBe(401);
   });
 
-  it("rejects requests beyond the 95 MiB declared size", async () => {
+  it("rejects requests beyond the declared size cap", async () => {
     const fd = new FormData();
     fd.append("file", new File(["halo"], "a.txt", { type: "text/plain" }));
     const res = await get("/api/upload?folder=root", {}, {

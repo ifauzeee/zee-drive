@@ -641,7 +641,7 @@ function ShareDialog({ file, onClose }: { file: DriveFile; onClose: () => void }
   );
 }
 
-const UPLOAD_MAX = 95 * 1024 * 1024;
+const UPLOAD_MAX = 75 * 1024 * 1024;
 
 function UploadModal({
   initialFolderId,
@@ -743,7 +743,7 @@ function UploadModal({
           />
         </div>
         {tooBig ? (
-          <Notice kind="error">File lebih dari 95 MB tidak bisa diunggah lewat aplikasi ini.</Notice>
+          <Notice kind="error">File lebih dari 75 MB tidak bisa diunggah lewat aplikasi ini.</Notice>
         ) : file ? (
           <p className="muted">{formatBytes(file.size)} · akan diunggah ke “{here}”</p>
         ) : null}

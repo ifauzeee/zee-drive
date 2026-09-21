@@ -32,7 +32,8 @@ export async function getAccessToken(env: AppEnv): Promise<string> {
 
   if (!response.ok) {
     const detail = await response.text();
-    throw new HttpError(502, `Google menolak refresh token: ${detail.slice(0, 200)}`);
+    console.error("Failed to refresh Drive token:", detail.slice(0, 200));
+    throw new HttpError(502, "Gagal mendapatkan akses ke Google Drive.");
   }
 
   const data = (await response.json()) as { access_token: string; expires_in?: number };
@@ -41,16 +42,31 @@ export async function getAccessToken(env: AppEnv): Promise<string> {
 }
 
 async function driveJson<T>(env: AppEnv, url: string): Promise<T> {
+  return driveFetch<T>(env, url, 0);
+}
+
+async function driveFetch<T>(env: AppEnv, url: string, attempt: number): Promise<T> {
   const token = await getAccessToken(env);
   const response = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
+  // A revoked or early-expired token surfaces as 401; drop the cache and retry once.
+  if (response.status === 401 && attempt === 0) {
+    tokenCache = null;
+    return driveFetch<T>(env, url, 1);
+  }
   if (!response.ok) {
     const detail = await response.text();
-    throw new HttpError(502, `Drive API error (${response.status}): ${detail.slice(0, 200)}`);
+    console.error(`Drive API error (${response.status}):`, detail.slice(0, 200));
+    throw new HttpError(502, "Gagal mengakses data dari Google Drive.");
   }
   return (await response.json()) as T;
 }
 
 export async function listFolder(env: AppEnv, folderId: string): Promise<DriveFile[]> {
+  // Defense-in-depth: Drive folder IDs are alphanumeric; reject anything else
+  // before it reaches the query string.
+  if (!/^[A-Za-z0-9_-]+$/.test(folderId)) {
+    throw new HttpError(400, "ID folder tidak valid.");
+  }
   const key = `list:${folderId}`;
   const ttl = cacheTtl(env);
 
@@ -174,6 +190,8 @@ export async function searchDrive(
     for (const child of children) {
       if (results.length >= 40) break;
       if (child.name.toLowerCase().includes(needle)) {
+        // ponytail: getBreadcrumb per hit = N+1 meta lookups (KV-cached, but
+        // pricey on deep trees). Batch breadcrumbs per folder if search latency grows.
         results.push({ file: child, crumbs: await getBreadcrumb(env, child.id, rootId) });
       }
       if (isFolder(child) && queue.length < 20) queue.push(child.id);
@@ -215,6 +233,14 @@ function contentDisposition(name: string, inline: boolean): string {
   return `${inline ? "inline" : "attachment"}; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(name)}`;
 }
 
+/** MIME types that could contain executable code or scripts when viewed inline */
+const DANGEROUS_MIME_TYPES = new Set([
+  "text/html",
+  "application/xhtml+xml",
+  "image/svg+xml",
+  "application/xml",
+]);
+
 export async function proxyFile(
   env: AppEnv,
   fileId: string,
@@ -249,9 +275,15 @@ export async function proxyFile(
 
   const responseHeaders = new Headers();
   responseHeaders.set("content-type", upstream.headers.get("content-type") ?? outputMime);
-  responseHeaders.set("content-disposition", contentDisposition(outputName, options.inline === true));
+  
+  // Force attachment for dangerous MIME types to prevent XSS via inline preview
+  const shouldForceAttachment = options.inline !== true || 
+    DANGEROUS_MIME_TYPES.has(outputMime.toLowerCase());
+  responseHeaders.set("content-disposition", contentDisposition(outputName, !shouldForceAttachment));
+  
   responseHeaders.set("accept-ranges", "bytes");
   responseHeaders.set("cache-control", "private, max-age=3600");
+  responseHeaders.set("x-content-type-options", "nosniff");
 
   for (const header of ["content-length", "content-range"]) {
     const value = upstream.headers.get(header);
