@@ -496,7 +496,7 @@ app.post("/api/upload", requireAdmin, async (c) => {
     file.stream(),
   );
 
-  if (c.env.CACHE) await c.env.CACHE.delete(`list:${folderId}`);
+  if (c.env.CACHE) await c.env.CACHE.delete(`list2:${folderId}`);
   await logActivity(c.env.DB, {
     actor: c.get("session").email,
     action: "upload",
@@ -789,7 +789,7 @@ app.post("/api/admin/refresh", requireAdmin, async (c) => {
   const body = (await c.req.json().catch(() => null)) as { folderId?: string } | null;
   if (!body?.folderId) return c.json({ error: "folderId diperlukan." }, 400);
   if (c.env.CACHE) {
-    await c.env.CACHE.delete(`list:${body.folderId}`);
+    await c.env.CACHE.delete(`list2:${body.folderId}`);
     await c.env.CACHE.delete(`meta:${body.folderId}`);
   }
   return c.json({ ok: true });
