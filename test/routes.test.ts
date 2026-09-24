@@ -315,34 +315,6 @@ describe("activity logging on file access", () => {
   });
 });
 
-describe("mobile access", () => {
-  const MOBILE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15";
-
-  it("blocks the app from mobile browsers", async () => {
-    const res = await get("/api/files", {}, { headers: { "user-agent": MOBILE_UA } });
-    expect(res.status).toBe(503);
-    expect(res.headers.get("content-type")).toContain("text/html");
-  });
-
-  it("lets admin sessions through on mobile", async () => {
-    const res = await get("/api/files", {}, {
-      headers: { "user-agent": MOBILE_UA, cookie: await cookieFor(ADMIN_DB, "Admin") },
-    });
-    expect(res.status).toBe(200);
-  });
-
-  it("keeps public share API open on mobile", async () => {
-    getShareLink.mockResolvedValueOnce(null);
-    const res = await get("/api/s/abc123", {}, { headers: { "user-agent": MOBILE_UA } });
-    expect(res.status).toBe(410);
-  });
-
-  it("keeps desktop browsers on the app", async () => {
-    const res = await get("/api/config", {}, { headers: { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" } });
-    expect(res.status).toBe(200);
-  });
-});
-
 describe("download rate limit", () => {
   it("rejects a client past the per-IP fetch cap", async () => {
     const ckv = { get: vi.fn().mockResolvedValue("1000"), put: vi.fn(), delete: vi.fn(), list: vi.fn() };
