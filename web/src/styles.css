@@ -133,19 +133,6 @@ input, select { font: inherit; }
 }
 .skip-link:focus { top: var(--space-2); }
 
-/* maintenance / mobile notice */
-.mobile-notice {
-  min-height: 100dvh;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  text-align: center; padding: 32px;
-  background: var(--bg-0);
-}
-.mobile-notice-mark {
-  width: 72px; height: 72px; margin-bottom: 28px;
-}
-.mobile-notice h1 { margin: 0; font-size: 26px; font-weight: 650; letter-spacing: -0.02em; color: var(--ink-1); }
-.mobile-notice p { margin: 14px 0 0; max-width: 30ch; font-size: 15px; line-height: 1.6; color: var(--ink-2); }
-
 .wrap { width: 100%; max-width: 80rem; margin-left: auto; margin-right: auto; padding-left: 1rem; padding-right: 1rem; }
 
 /* ---------- top bar ---------- */

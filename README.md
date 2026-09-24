@@ -30,8 +30,8 @@ Browser -> Workers (Hono)
 | Resource | Free tier limit | Used for |
 |----------|----------------|----------|
 | Workers | 100k requests/day | entire app |
-| KV | 100k reads + 1k writes/day | folder listing cache, rate limiting |
-| D1 | 5 GB, 100k writes/day | share links, folder passwords, activity log, settings |
+| KV | 100k reads + 1k writes/day | folder listing cache |
+| D1 | 5 GB, 100k writes/day | share links, folder passwords, activity log, rate limits, settings |
 | Google Drive API | free | metadata + download streaming |
 
 Audio/video streams through `fetch` -- no CPU time spent waiting on network, so large media files work within limits. Folder listings are cached in KV for 300 seconds so each request only makes one Drive API call.
@@ -133,7 +133,7 @@ Add the worker's redirect URI to your OAuth Client, then visit `https://zee-driv
 - All file access checks folder protection recursively up the ancestor chain.
 - Folder passwords are hashed with PBKDF2-SHA256 (100k iterations + random salt, the Workers runtime cap). bcrypt is unavailable in Workers without dependencies.
 - Share tokens are signed with `SHARE_SECRET_KEY`; usage tracked in D1; revocable.
-- Rate limiting via KV on unlock and share endpoints.
+- Rate limiting via atomic D1 counters (fixed window) on unlock, search, download, and public share endpoints.
 - CSP, `X-Frame-Options`, and `nosniff` headers set at the worker level.
 - Admin access determined by `ALLOWED_EMAILS` -- no user registration or management.
 

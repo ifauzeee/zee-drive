@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createShareLink, touchShareLink } from "../src/db";
+import { createShareLink, hitRateLimit, pruneRateLimits, touchShareLink } from "../src/db";
 
 type SqlCall = { sql: string; params: unknown[] };
 
@@ -52,5 +52,34 @@ describe("createShareLink", () => {
     const sql = calls[0].sql as string;
     expect(sql).toContain("VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, 0, ?)");
     expect(calls[0].params).toEqual(["s1", "f1", "f", "admin", 0, null, 5, 0, null]);
+  });
+});
+
+describe("hitRateLimit", () => {
+  it("returns true when the atomic upsert applies", async () => {
+    const calls: SqlCall[] = [];
+    const ok = await hitRateLimit(fakeDb(calls, 1), "unlock", "ip:1", 12_345_600, 10);
+    expect(ok).toBe(true);
+    expect(calls[0].sql).toContain("INSERT INTO rate_limits");
+    expect(calls[0].sql).toContain("ON CONFLICT(scope, key, window_start)");
+    expect(calls[0].sql).toContain("count = count + 1");
+    expect(calls[0].sql).toContain("WHERE count < ?");
+    expect(calls[0].params).toEqual(["unlock", "ip:1", 12_345_600, 10]);
+  });
+
+  it("returns false when the row already hit the limit", async () => {
+    const calls: SqlCall[] = [];
+    const ok = await hitRateLimit(fakeDb(calls, 0), "unlock", "ip:1", 12_345_600, 10);
+    expect(ok).toBe(false);
+  });
+});
+
+describe("pruneRateLimits", () => {
+  it("drops rate rows whose window has long passed", async () => {
+    const calls: SqlCall[] = [];
+    const deleted = await pruneRateLimits(fakeDb(calls, 7), 86_400);
+    expect(deleted).toBe(7);
+    expect(calls[0].sql).toContain("DELETE FROM rate_limits");
+    expect(calls[0].sql).toContain("window_start < ?");
   });
 });

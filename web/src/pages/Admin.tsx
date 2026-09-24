@@ -222,6 +222,7 @@ function PasswordsTab() {
         ) : rows.length === 0 ? (
           <Empty title="Belum ada folder terkunci." />
         ) : (
+          <div style={{ overflowX: "auto" }}>
           <table className="table">
             <thead>
               <tr><th>Folder</th><th></th></tr>
@@ -256,6 +257,7 @@ function PasswordsTab() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
       <div className="card">
