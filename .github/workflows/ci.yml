@@ -20,6 +20,35 @@ jobs:
       - run: npm test
       - run: npm run build:web
 
+  e2e:
+    # Needs real Google API credentials to reach Drive; runs only when the
+    # repo has them configured, so it can be green without a live archive.
+    if: ${{ secrets.GOOGLE_CLIENT_ID != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:web
+      - name: Prepare local D1 (migrations + guest login)
+        run: |
+          npm run db:migrate
+          npx wrangler d1 execute zee-index-db --local --command "INSERT INTO settings (key, value) VALUES ('guest','1') ON CONFLICT(key) DO UPDATE SET value='1'"
+      - name: Write .dev.vars for local bindings
+        run: |
+          cat > .dev.vars <<EOF
+          GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN=${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          SESSION_SECRET=${{ secrets.SESSION_SECRET }}
+          SHARE_SECRET_KEY=${{ secrets.SHARE_SECRET_KEY }}
+          EOF
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+
   deploy:
     needs: quality
     if: github.ref == 'refs/heads/main'
