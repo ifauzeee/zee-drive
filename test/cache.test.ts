@@ -61,13 +61,13 @@ describe("listFolder KV cache", () => {
     expect(driveCalls()).toHaveLength(1);
     await listFolder(driveEnv, "root");
     expect(driveCalls()).toHaveLength(1);
-    expect(store.has("list:root")).toBe(true);
+    expect(store.has("list2:root")).toBe(true);
   });
 
   it("falls back to Drive when cache is empty", async () => {
     const emptyEnv = { CACHE: undefined, CACHE_TTL_SECONDS: "300" };
     hit = stubDriveFetch();
-    const files = await listFolder(emptyEnv as never, "root");
+    const { files } = await listFolder(emptyEnv as never, "root");
     expect(files.length).toBeGreaterThan(0);
   });
 });

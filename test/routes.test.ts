@@ -46,7 +46,7 @@ vi.mock("../src/drive", async (importOriginal) => {
     }),
     getStorageQuota: vi.fn().mockResolvedValue({}),
     isFolder: real.isFolder,
-    listFolder: vi.fn().mockResolvedValue([]),
+    listFolder: vi.fn().mockResolvedValue({ files: [], truncated: false }),
     proxyFile: vi.fn().mockResolvedValue(new Response("bytes", { status: 200 })),
     searchDrive: vi.fn().mockResolvedValue([]),
   };
@@ -143,7 +143,7 @@ beforeEach(() => {
   getBreadcrumb.mockResolvedValue([]);
   getAncestors.mockResolvedValue(["root"]);
   getMeta.mockResolvedValue(DEFAULT_META);
-  listFolder.mockResolvedValue([]);
+  listFolder.mockResolvedValue({ files: [], truncated: false });
   activeSessionEmail = ADMIN_DB;
 });
 
@@ -274,7 +274,7 @@ describe("maintenance mode", () => {
     getSetting.mockResolvedValue("1");
     const res = await get("/api/files", {}, { headers: { cookie: await cookieFor(ADMIN_DB, "Admin") } });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ files: [], crumbs: [] });
+    expect(await res.json()).toEqual({ files: [], crumbs: [], truncated: false });
   });
 });
 
@@ -546,9 +546,10 @@ describe("folder share", () => {
     const token = await signJson({ sid: "s5", fid: "fdir" }, SECRETS.SHARE_SECRET_KEY);
     getShareLink.mockResolvedValue(shareRow("s5", { file_id: "fdir", file_name: "Kuliah" }));
     getBreadcrumb.mockResolvedValue([{ id: "fdir", name: "Kuliah" }]);
-    listFolder.mockResolvedValue([
-      { id: "c1", name: "catatan.txt", mimeType: "text/plain" },
-    ]);
+    listFolder.mockResolvedValue({
+      files: [{ id: "c1", name: "catatan.txt", mimeType: "text/plain" }],
+      truncated: false,
+    });
     const res = await get(`/api/s/${token}/files`);
     expect(res.status).toBe(200);
     const body = await json(res);

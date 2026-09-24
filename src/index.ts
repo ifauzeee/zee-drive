@@ -262,11 +262,11 @@ app.get("/api/files", requireSession, async (c) => {
   try {
     const folderId = c.req.query("folder") || c.env.ROOT_FOLDER_ID;
     await requireUnlocked(c.env, folderId, parseCookies(c.req.header("cookie") ?? null));
-    const [files, crumbs] = await Promise.all([
+    const [listing, crumbs] = await Promise.all([
       listFolder(c.env, folderId),
       getBreadcrumb(c.env, folderId, c.env.ROOT_FOLDER_ID),
     ]);
-    return c.json({ files, crumbs });
+    return c.json({ files: listing.files, crumbs, truncated: listing.truncated });
   } catch (error) {
     return errorJson(c, error);
   }
@@ -600,8 +600,8 @@ app.get("/api/s/:token/files", async (c) => {
       throw new HttpError(404, "Folder di luar jangkauan share link.");
     }
     await requireUnlocked(c.env, folder, parseCookies(c.req.header("cookie") ?? null));
-    const files = await listFolder(c.env, folder);
-    return c.json({ files, crumbs, rootId: row.file_id, rootName: row.file_name });
+    const listing = await listFolder(c.env, folder);
+    return c.json({ files: listing.files, crumbs, rootId: row.file_id, rootName: row.file_name });
   } catch (error) {
     return errorJson(c, error);
   }

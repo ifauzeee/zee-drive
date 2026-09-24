@@ -48,15 +48,22 @@ afterEach(() => {
 describe("listFolder pagination", () => {
   it("follows nextPageToken to the second page and stops", async () => {
     const hit = stubDriveFetch(2);
-    const files = await listFolder(driveEnv as never, "root");
+    const { files } = await listFolder(driveEnv as never, "root");
     expect(files.map((f) => f.id)).toEqual(["f1", "f2"]);
     expect(hit.filter((u) => u.includes("drive/v3/files"))).toHaveLength(2);
   });
 
-  it("caps at 4 pages when Drive keeps paging", async () => {
+  it("caps at 4 pages and flags the listing as truncated", async () => {
     stubDriveFetch(10);
-    const files = await listFolder(driveEnv as never, "root");
+    const { files, truncated } = await listFolder(driveEnv as never, "root");
     expect(files).toHaveLength(4);
+    expect(truncated).toBe(true);
+  });
+
+  it("reports truncated=false when Drive stops paging", async () => {
+    stubDriveFetch(2);
+    const { truncated } = await listFolder(driveEnv as never, "root");
+    expect(truncated).toBe(false);
   });
 
   it("rejects folder ids with characters outside drive id charset", async () => {
