@@ -161,9 +161,11 @@ export async function getAncestors(
 export type SearchResult = { file: DriveFile; crumbs: Crumb[] };
 
 /**
- * Names the whole tree under rootId. Drive has no "descendant of" query,
- * so walk it with BFS (listFolder reuses the existing KV cache).
- * Results and visited folders are capped.
+ * Searches by name via Drive's native recursive query, then keeps only hits
+ * whose ancestor chain reaches the archive root. Drive has no "descendant of"
+ * operator, so a permissive account could surface files outside the archive;
+ * getBreadcrumb marks those by the absence of the root crumb (same semantics
+ * as the root-boundary guard).
  */
 export async function searchDrive(
   env: AppEnv,
@@ -179,23 +181,34 @@ export async function searchDrive(
     if (cached) return cached;
   }
 
+  const escaped = needle.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
   const results: SearchResult[] = [];
-  const queue = [rootId];
-  let visited = 0;
-  // ponytail: BFS capped at 20 folders / 40 hits; raise if the tree gets deep.
-  while (queue.length > 0 && visited < 20 && results.length < 40) {
-    const folderId = queue.shift()!;
-    visited++;
-    const children = await listFolder(env, folderId);
-    for (const child of children) {
-      if (results.length >= 40) break;
-      if (child.name.toLowerCase().includes(needle)) {
-        // ponytail: getBreadcrumb per hit = N+1 meta lookups (KV-cached, but
-        // pricey on deep trees). Batch breadcrumbs per folder if search latency grows.
-        results.push({ file: child, crumbs: await getBreadcrumb(env, child.id, rootId) });
+  let nextToken: string | undefined;
+  // ponytail: search runs server-side, so the caps now bound result volume
+  // rather than completeness — 100 hits / 4 pages keeps latency sane.
+  for (let page = 0; page < 4 && results.length < 100; page++) {
+    const params = new URLSearchParams({
+      q: `name contains '${escaped}' and trashed = false`,
+      fields: `nextPageToken,files(${FILE_FIELDS})`,
+      pageSize: "300",
+      supportsAllDrives: "true",
+      includeItemsFromAllDrives: "true",
+    });
+    if (nextToken) params.set("pageToken", nextToken);
+    const data = await driveJson<{ files?: DriveFile[]; nextPageToken?: string }>(
+      env,
+      `https://www.googleapis.com/drive/v3/files?${params}`,
+    );
+    nextToken = data.nextPageToken;
+    for (const child of data.files ?? []) {
+      if (results.length >= 100) break;
+      if (child.id === rootId) continue;
+      const crumbs = await getBreadcrumb(env, child.id, rootId);
+      if (crumbs.some((c) => c.id === rootId)) {
+        results.push({ file: child, crumbs });
       }
-      if (isFolder(child) && queue.length < 20) queue.push(child.id);
     }
+    if (!nextToken) break;
   }
 
   if (env.CACHE) {

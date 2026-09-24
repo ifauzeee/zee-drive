@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FOLDER_MIME, listFolder, proxyFile } from "../src/drive";
+import { FOLDER_MIME, listFolder, proxyFile, searchDrive } from "../src/drive";
 import { kindOf } from "../web/src/api";
 
 describe("drive classification", () => {
@@ -116,5 +116,69 @@ describe("proxyFile XSS hardening", () => {
     const res = await proxyFile(driveEnv as never, "P2", { inline: true });
     expect(res.headers.get("x-frame-options")).toBe("SAMEORIGIN");
     expect(res.headers.get("content-security-policy")).toBe("frame-ancestors 'self'");
+  });
+});
+
+describe("searchDrive", () => {
+  function stubSearch(searchFiles: object[], metaByParent: Record<string, string[]>) {
+    const hits: string[] = [];
+    vi.stubGlobal("fetch", async (input: string | URL) => {
+      const url = String(input);
+      hits.push(url);
+      if (url.includes("oauth2.googleapis.com/token")) {
+        return new Response(JSON.stringify({ access_token: "t", expires_in: 3600 }), { status: 200 });
+      }
+      if (url.includes("drive/v3/files?") && url.includes("q=")) {
+        return new Response(JSON.stringify({ files: searchFiles }), { status: 200 });
+      }
+      if (url.includes("/files/")) {
+        const id = url.split("/files/")[1]!.split("?")[0];
+        return new Response(
+          JSON.stringify({ id, name: `f-${id}`, mimeType: "text/plain", parents: metaByParent[id] ?? ["root"] }),
+          { status: 200 },
+        );
+      }
+      return new Response("{}", { status: 200 });
+    });
+    return hits;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("queries Drive by name contains with single-quote escaping", async () => {
+    const hits = stubSearch([{ id: "f1", name: "Catatan.txt", mimeType: "text/plain" }], { f1: ["root"] });
+    const out = await searchDrive(driveEnv as never, "it's", "root");
+    expect(out).toHaveLength(1);
+    expect(out[0].file.name).toBe("Catatan.txt");
+    const q = new URL(hits.find((h) => h.includes("q="))!).searchParams.get("q");
+    expect(q).toBe("name contains 'it\\'s' and trashed = false");
+  });
+
+  it("keeps hits whose ancestor chain reaches the archive root", async () => {
+    stubSearch([{ id: "f1", name: "Catatan.txt", mimeType: "text/plain" }], { f1: ["mid"], mid: ["root"] });
+    const out = await searchDrive(driveEnv as never, "cat", "root");
+    expect(out).toHaveLength(1);
+    expect(out[0].crumbs.map((c) => c.id)).toEqual(["root", "mid", "f1"]);
+  });
+
+  it("drops hits outside the archive root", async () => {
+    stubSearch([{ id: "f1", name: "Catatan.txt", mimeType: "text/plain" }], { f1: ["X"], X: [] });
+    const out = await searchDrive(driveEnv as never, "cat", "root");
+    expect(out).toHaveLength(0);
+  });
+
+  it("excludes the root folder itself from results", async () => {
+    stubSearch(
+      [
+        { id: "root", name: "Home Base", mimeType: "application/vnd.google-apps.folder" },
+        { id: "f1", name: "Homebase.txt", mimeType: "text/plain" },
+      ],
+      { f1: ["root"] },
+    );
+    const out = await searchDrive(driveEnv as never, "home", "root");
+    expect(out).toHaveLength(1);
+    expect(out[0].file.id).toBe("f1");
   });
 });
