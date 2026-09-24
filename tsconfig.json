@@ -17,5 +17,5 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["vitest/globals", "@cloudflare/workers-types", "vite-plugin-pwa/client"]
   },
-  "include": ["src/**/*", "web/src/**/*", "test/**/*", "vite.config.ts"]
+  "include": ["src/**/*", "web/src/**/*", "test/**/*", "e2e/**/*", "vite.config.ts", "playwright.config.ts"]
 }

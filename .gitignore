@@ -5,6 +5,8 @@ dist/
 .dev.vars
 .wrangler/
 .playwright-mcp/
+test-results/
+playwright-report/
 *.log
 .env
 .env.*

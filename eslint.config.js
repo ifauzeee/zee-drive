@@ -10,7 +10,7 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ["src/**/*.ts", "test/**/*.ts", "web/src/**/*.{ts,tsx}"],
+    files: ["src/**/*.ts", "test/**/*.ts", "e2e/**/*.ts", "playwright.config.ts", "web/src/**/*.{ts,tsx}"],
     languageOptions: {
       globals: { ...globals.browser, ...globals.node },
     },
