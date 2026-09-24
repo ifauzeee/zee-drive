@@ -162,17 +162,20 @@ export default function Browse({
 
   async function downloadZipFolder() {
     if (!files) return;
-    const items = files.filter((f) => kindOf(f.mimeType) !== "folder");
-    if (items.length === 0) {
+    const topFiles = files.filter((f) => kindOf(f.mimeType) !== "folder");
+    const topFolders = files.filter((f) => kindOf(f.mimeType) === "folder");
+    if (topFiles.length === 0 && topFolders.length === 0) {
       push("info", "Tidak ada file untuk diarsipkan.");
-      return;
-    }
-    if (items.length > 60) {
-      push("error", "Folder terlalu besar — maksimal 60 file sekali arsip.");
       return;
     }
     setZipping(true);
     try {
+      const { items, skipped, truncated } = await collectTree(files);
+      if (items.length === 0) {
+        push("error", "Tidak ada file yang bisa diarsipkan.");
+        return;
+      }
+      if (truncated) push("info", "Batas arsip tercapai — sebagian file dilewatkan.");
       const sources = await Promise.all(
         items.map(async (f) => {
           const res = await fetch(`/d/${f.id}`, { credentials: "same-origin" });
@@ -188,7 +191,7 @@ export default function Browse({
       a.download = `${crumbs[crumbs.length - 1]?.name ?? "arsip"}.zip`;
       a.click();
       URL.revokeObjectURL(url);
-      push("ok", `Arsip dibuat (${items.length} file).`);
+      push("ok", `Arsip dibuat (${items.length} file${skipped ? `, ${skipped} folder terkunci dilewati` : ""}).`);
     } catch (e2) {
       push("error", e2 instanceof Error ? e2.message : "Gagal membuat arsip.");
     } finally {
@@ -296,7 +299,7 @@ export default function Browse({
           className="btn"
           onClick={() => void downloadZipFolder()}
           disabled={zipping || isSearching || (files?.length ?? 0) === 0}
-          title="Arsip folder saat ini (file saja, tanpa subfolder)"
+          title="Arsipkan folder beserta isi subfolder"
         >
           {zipping ? "Menggabung…" : "Unduh .zip"}
         </button>
@@ -643,6 +646,54 @@ function ShareDialog({ file, onClose }: { file: DriveFile; onClose: () => void }
 
 const UPLOAD_MAX = 75 * 1024 * 1024;
 
+// Recursive folder archive guardrails: cap items and total bytes so a big tree
+// cannot exhaust browser memory, and bail early when a subfolder is locked.
+const ZIP_MAX_FILES = 150;
+const ZIP_MAX_BYTES = 512 * 1024 * 1024;
+const ZIP_MAX_DEPTH = 12;
+
+type TreeCollect = { items: DriveFile[]; skipped: number; truncated: boolean };
+
+async function collectTree(topLevel: DriveFile[]): Promise<TreeCollect> {
+  const items: DriveFile[] = [];
+  let skipped = 0;
+  let truncated = false;
+  let totalBytes = 0;
+  const queue: { id: string; depth: number }[] = [];
+
+  for (const f of topLevel) {
+    if (kindOf(f.mimeType) === "folder") queue.push({ id: f.id, depth: 1 });
+    else items.push(f);
+  }
+
+  while (queue.length > 0 && !truncated) {
+    const { id, depth } = queue.shift()!;
+    if (depth > ZIP_MAX_DEPTH) continue;
+    let children: DriveFile[];
+    try {
+      children = (await api.files(id)).files;
+    } catch (e) {
+      if (e instanceof ApiError && e.locked) skipped++;
+      else throw e;
+      continue;
+    }
+    for (const c of children) {
+      if (kindOf(c.mimeType) === "folder") {
+        if (depth < ZIP_MAX_DEPTH) queue.push({ id: c.id, depth: depth + 1 });
+      } else {
+        totalBytes += Number(c.size || 0);
+        if (items.length >= ZIP_MAX_FILES || totalBytes >= ZIP_MAX_BYTES) {
+          truncated = true;
+          break;
+        }
+        items.push(c);
+      }
+    }
+  }
+
+  return { items, skipped, truncated };
+}
+
 function UploadModal({
   initialFolderId,
   crumbs,
@@ -658,7 +709,7 @@ function UploadModal({
   const [dirId, setDirId] = useState(initialFolderId);
   const [path, setPath] = useState<Crumb[]>(crumbs);
   const [subs, setSubs] = useState<DriveFile[] | null>(null);
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [progress, setProgress] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -678,13 +729,17 @@ function UploadModal({
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (!file || file.size > UPLOAD_MAX) return;
+    if (files.length === 0 || files.some((f) => f.size > UPLOAD_MAX)) return;
     setBusy(true);
     setError(null);
     setProgress(0);
     try {
-      await api.upload(file, dirId, setProgress);
-      push("ok", `${file.name} berhasil diunggah.`);
+      let completed = 0;
+      for (const f of files) {
+        await api.upload(f, dirId, (p) => setProgress((completed + p) / files.length));
+        completed++;
+      }
+      push("ok", `${files.length} file berhasil diunggah.`);
       onDone();
     } catch (e2) {
       setError(e2 instanceof Error ? e2.message : "Upload gagal.");
@@ -694,7 +749,8 @@ function UploadModal({
   }
 
   const here = path.length > 0 ? path[path.length - 1].name : "Arsip";
-  const tooBig = file !== null && file.size > UPLOAD_MAX;
+  const tooBig = files.some((f) => f.size > UPLOAD_MAX);
+  const totalBytes = files.reduce((n, f) => n + f.size, 0);
 
   return (
     <Modal title="Unggah file" sub={`Tujuan: ${here}`} onClose={onClose}>
@@ -739,13 +795,14 @@ function UploadModal({
             id="up-file"
             className="input"
             type="file"
-            onChange={(e) => { setFile(e.target.files?.[0] ?? null); setProgress(null); }}
+            multiple
+            onChange={(e) => { setFiles(Array.from(e.target.files ?? [])); setProgress(null); }}
           />
         </div>
         {tooBig ? (
-          <Notice kind="error">File lebih dari 75 MB tidak bisa diunggah lewat aplikasi ini.</Notice>
-        ) : file ? (
-          <p className="muted">{formatBytes(file.size)} · akan diunggah ke “{here}”</p>
+          <Notice kind="error">Ada file lebih dari 75 MB — file per item tidak bisa melebihi batas ini.</Notice>
+        ) : files.length > 0 ? (
+          <p className="muted">{files.length} file · {formatBytes(totalBytes)} · akan diunggah ke “{here}”</p>
         ) : null}
         {progress !== null ? (
           <div
@@ -759,8 +816,8 @@ function UploadModal({
           </div>
         ) : null}
         <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn primary" disabled={!file || tooBig || busy}>
-            {busy ? "Mengunggah…" : "Unggah"}
+          <button className="btn primary" disabled={files.length === 0 || tooBig || busy}>
+            {busy ? "Mengunggah…" : `Unggah${files.length > 1 ? ` (${files.length})` : ""}`}
           </button>
           <button type="button" className="btn ghost" onClick={onClose} disabled={busy}>Batal</button>
         </div>
