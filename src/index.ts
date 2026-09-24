@@ -68,64 +68,6 @@ const app = new Hono<{ Bindings: AppEnv; Variables: Vars }>();
 
 app.use("*", logger());
 
-// Keep the app off mobile browsers until the responsive pass is done. The
-// standalone pages (share links) are asset-free, and admins pass through. Public
-// share paths (/share/, /api/s/*, and /s/* bytes) stay open: those are
-// self-contained pages that must work on phones, not part of the main app.
-const MOBILE_UA = /(Mobi|Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini)/i;
-const MOBILE_OPEN_PATHS = /^\/(share\/|api\/s\/|s\/)/;
-app.use("*", async (c, next) => {
-  const ua = c.req.header("user-agent") ?? "";
-  if (!MOBILE_UA.test(ua)) return next();
-  const path = new URL(c.req.url).pathname;
-  if (MOBILE_OPEN_PATHS.test(path)) return next();
-  const cookies = parseCookies(c.req.header("cookie") ?? null);
-  const admin = !!cookies[SESSION_COOKIE] &&
-    isAdmin((await verifySession(cookies[SESSION_COOKIE], c.env))?.email ?? "", c.env);
-  if (admin) return next();
-  return new Response(mobileMaintenanceHtml, {
-    status: 503,
-    headers: {
-      "content-type": "text/html; charset=utf-8",
-      "cache-control": "no-store",
-    },
-  });
-});
-
-const mobileMaintenanceHtml = `<!doctype html>
-<html lang="id">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<meta name="robots" content="noindex"/>
-<title>Zee-Drive — Under maintenance</title>
-<style>
-  :root { color-scheme: dark; }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; min-height: 100dvh;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    text-align: center; padding: 32px;
-    background: #0b0d10; color: #f1f2f4;
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  }
-  .mark {
-    width: 72px; height: 72px; margin-bottom: 28px;
-    background: #e8a33d;
-    -webkit-mask: url("/Zee-Index-Logo.png") no-repeat center / contain;
-            mask: url("/Zee-Index-Logo.png") no-repeat center / contain;
-  }
-  h1 { margin: 0; font-size: 26px; font-weight: 650; letter-spacing: -.02em; }
-  p { margin: 14px 0 0; max-width: 30ch; font-size: 15px; line-height: 1.6; color: #9aa1ab; }
-</style>
-</head>
-<body>
-  <div class="mark" aria-hidden="true"></div>
-  <h1>Zee-Drive</h1>
-  <p>Versi mobile sedang dirapikan. Buka lewat perangkat desktop (laptop / PC) beberapa saat lagi.</p>
-</body>
-</html>`;
-
 /* ---------- helpers ---------- */
 
 function clientIp(c: AppContext): string {
