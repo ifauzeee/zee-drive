@@ -49,6 +49,7 @@ export default function Browse({
   onPath?: (p: { folderId: string; crumbs: Crumb[] }) => void;
 }) {
   const [files, setFiles] = useState<DriveFile[] | null>(null);
+  const [truncated, setTruncated] = useState(false);
   const [crumbs, setCrumbs] = useState<Crumb[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [lock, setLock] = useState<LockInfo | null>(null);
@@ -110,6 +111,7 @@ export default function Browse({
     try {
       const res = await api.files(folderId);
       setFiles(res.files);
+      setTruncated(res.truncated === true);
       setCrumbs(res.crumbs);
       onPath?.({ folderId, crumbs: res.crumbs });
       // Auto view: when no explicit choice is saved and media dominates, go grid.
@@ -280,6 +282,12 @@ export default function Browse({
           ))
         )}
       </nav>
+
+      {truncated ? (
+        <Notice kind="info">
+          Folder ini sangat besar — hanya 4.000 item pertama yang ditampilkan. Gunakan pencarian atau navigasi subfolder untuk melihat sisanya.
+        </Notice>
+      ) : null}
 
       <div className="toolbar" role="search">
         <label className="search">

@@ -61,24 +61,26 @@ async function driveFetch<T>(env: AppEnv, url: string, attempt: number): Promise
   return (await response.json()) as T;
 }
 
-export async function listFolder(env: AppEnv, folderId: string): Promise<DriveFile[]> {
+export type FolderListing = { files: DriveFile[]; truncated: boolean };
+
+export async function listFolder(env: AppEnv, folderId: string): Promise<FolderListing> {
   // Defense-in-depth: Drive folder IDs are alphanumeric; reject anything else
   // before it reaches the query string.
   if (!/^[A-Za-z0-9_-]+$/.test(folderId)) {
     throw new HttpError(400, "ID folder tidak valid.");
   }
-  const key = `list:${folderId}`;
+  const key = `list2:${folderId}`;
   const ttl = cacheTtl(env);
 
   if (env.CACHE) {
-    const cached = await env.CACHE.get<DriveFile[]>(key, "json");
+    const cached = await env.CACHE.get<FolderListing>(key, "json");
     if (cached) return cached;
   }
 
   const escaped = folderId.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
   const params = new URLSearchParams({
     q: `'${escaped}' in parents and trashed = false`,
-    fields: `files(${FILE_FIELDS})`,
+    fields: `files(${FILE_FIELDS}),nextPageToken`,
     orderBy: "folder,name",
     pageSize: "1000",
     supportsAllDrives: "true",
@@ -87,8 +89,8 @@ export async function listFolder(env: AppEnv, folderId: string): Promise<DriveFi
 
   const files: DriveFile[] = [];
   let nextToken: string | undefined;
-  // ponytail: Drive caps pageSize at 1000; cap at 4 pages (~4000 items),
-  // then truncate silently. Stream/`truncated` flag if real folders outgrow it.
+  // ponytail: Drive caps pageSize at 1000; cap at 4 pages (~4000 items). The
+  // truncated flag tells the UI to say so instead of dropping items silently.
   for (let page = 0; page < 4; page++) {
     if (nextToken) params.set("pageToken", nextToken);
     const data = await driveJson<{ files?: DriveFile[]; nextPageToken?: string }>(
@@ -99,11 +101,13 @@ export async function listFolder(env: AppEnv, folderId: string): Promise<DriveFi
     nextToken = data.nextPageToken;
     if (!nextToken) break;
   }
+  const truncated = Boolean(nextToken);
 
+  const listing: FolderListing = { files, truncated };
   if (env.CACHE) {
-    await env.CACHE.put(key, JSON.stringify(files), { expirationTtl: ttl });
+    await env.CACHE.put(key, JSON.stringify(listing), { expirationTtl: ttl });
   }
-  return files;
+  return listing;
 }
 
 export async function getMeta(env: AppEnv, fileId: string): Promise<DriveFileWithParents> {
