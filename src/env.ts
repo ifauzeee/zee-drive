@@ -6,6 +6,8 @@ export type AppEnv = {
   SHARE_SECRET_KEY: string;
   ROOT_FOLDER_ID: string;
   ALLOWED_EMAILS: string;
+  ADMIN_USER?: string;
+  ADMIN_PASSWORD_HASH?: string;
   OAUTH_REDIRECT_URI?: string;
   CACHE_TTL_SECONDS?: string;
   APP_NAME?: string;

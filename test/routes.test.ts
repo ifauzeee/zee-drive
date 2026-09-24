@@ -256,6 +256,71 @@ describe("session", () => {
   });
 });
 
+describe("local admin login", () => {
+  const adminHash = () => hashPassword("zee343212");
+
+  function post(body: unknown, over: Record<string, unknown> = {}) {
+    return get("/auth/admin", over, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("rejects when local admin is not configured", async () => {
+    const res = await post({ username: "zee", password: "zee343212" });
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects wrong credentials with 401", async () => {
+    const res = await post(
+      { username: "zee", password: "salah" },
+      { ADMIN_USER: "zee", ADMIN_PASSWORD_HASH: await adminHash() },
+    );
+    expect(res.status).toBe(401);
+    expect(db.createSession).not.toHaveBeenCalled();
+  });
+
+  it("rejects when the username does not match", async () => {
+    const res = await post(
+      { username: "admin", password: "zee343212" },
+      { ADMIN_USER: "zee", ADMIN_PASSWORD_HASH: await adminHash() },
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("logs in as the first allowed email and sets a Strict cookie", async () => {
+    const res = await post(
+      { username: "zee", password: "zee343212" },
+      { ADMIN_USER: "zee", ADMIN_PASSWORD_HASH: await adminHash() },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("set-cookie")).toContain("SameSite=Strict");
+    expect(db.createSession).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(String),
+      ADMIN_DB,
+      expect.any(Number),
+    );
+    expect(db.logActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ actor: ADMIN_DB, action: "login.local" }),
+    );
+  });
+
+  it("rate limits per IP and fails closed on limiter errors", async () => {
+    const creds = { ADMIN_USER: "zee", ADMIN_PASSWORD_HASH: await adminHash() };
+    hitRateLimit.mockResolvedValueOnce(false);
+    const limited = await post({ username: "zee", password: "zee343212" }, creds);
+    expect(limited.status).toBe(429);
+
+    hitRateLimit.mockRejectedValueOnce(new Error("db down"));
+    const failed = await post({ username: "zee", password: "zee343212" }, creds);
+    expect(failed.status).toBe(500);
+    expect(db.createSession).not.toHaveBeenCalled();
+  });
+});
+
 describe("maintenance mode", () => {
   it("blocks non-admin requests with 503", async () => {
     getSetting.mockResolvedValue("1");

@@ -1,4 +1,32 @@
+import { useState } from "react";
+import { api } from "../api";
+
 export default function Login({ appName, guestLogin }: { appName: string; guestLogin: boolean }) {
+  const [showLocal, setShowLocal] = useState(false);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submitLocal(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.localAdminLogin(username, password);
+      if (res.ok) {
+        window.location.href = "/";
+        return;
+      }
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      setError(data.error || "Login gagal.");
+    } catch {
+      setError("Login gagal.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="login">
       <div className="login-visual">
@@ -25,6 +53,36 @@ export default function Login({ appName, guestLogin }: { appName: string; guestL
                 <span>Masuk sebagai Tamu</span>
               </button>
             ) : null}
+            {showLocal ? (
+              <form onSubmit={submitLocal} style={{ display: "grid", gap: 8, width: "100%" }}>
+                <input
+                  className="select"
+                  type="text"
+                  autoComplete="username"
+                  placeholder="Username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  aria-label="Username"
+                />
+                <input
+                  className="select"
+                  type="password"
+                  autoComplete="current-password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  aria-label="Password"
+                />
+                {error ? <p style={{ margin: 0, color: "var(--danger, #e5484d)", fontSize: 13 }}>{error}</p> : null}
+                <button className="btn btn-full" type="submit" disabled={busy || !username || !password} style={{ width: "100%" }}>
+                  {busy ? "Memeriksa…" : "Masuk"}
+                </button>
+              </form>
+            ) : (
+              <button className="btn btn-ghost btn-full" style={{ width: "100%" }} onClick={() => setShowLocal(true)}>
+                <span>Masuk dengan akun lokal</span>
+              </button>
+            )}
           </div>
 
           <p className="login-footer">
