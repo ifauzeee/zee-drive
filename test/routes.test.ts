@@ -615,13 +615,14 @@ describe("admin activity csv", () => {
   });
 });
 
-describe("admin refresh", () => {
-  it("busts the folder list and meta cache", async () => {
+describe("folder refresh", () => {
+  it("busts the folder list and meta cache for any session", async () => {
+    activeSessionEmail = "guest@zee.local";
     const cacheDelete = vi.fn();
     const ckv = { get: vi.fn(), put: vi.fn(), delete: cacheDelete, list: vi.fn() };
-    const res = await get("/api/admin/refresh", env({ CACHE: ckv }), {
+    const res = await get("/api/files/refresh", env({ CACHE: ckv }), {
       method: "POST",
-      headers: { cookie: await cookieFor(ADMIN_DB, "Admin"), "content-type": "application/json" },
+      headers: { cookie: await cookieFor("guest@zee.local", "Tamu"), "content-type": "application/json" },
       body: JSON.stringify({ folderId: "root" }),
     });
     expect(res.status).toBe(200);
@@ -629,8 +630,8 @@ describe("admin refresh", () => {
     expect(cacheDelete).toHaveBeenCalledWith("meta:root");
   });
 
-  it("rejects guests", async () => {
-    const res = await get("/api/admin/refresh", {}, {
+  it("rejects unauthenticated callers", async () => {
+    const res = await get("/api/files/refresh", {}, {
       method: "POST",
       body: JSON.stringify({ folderId: "root" }),
     });
@@ -638,12 +639,23 @@ describe("admin refresh", () => {
   });
 
   it("requires a folderId", async () => {
-    const res = await get("/api/admin/refresh", {}, {
+    const res = await get("/api/files/refresh", {}, {
       method: "POST",
       headers: { cookie: await cookieFor(ADMIN_DB, "Admin"), "content-type": "application/json" },
       body: JSON.stringify({}),
     });
     expect(res.status).toBe(400);
+  });
+
+  it("rate limits per IP", async () => {
+    activeSessionEmail = "guest@zee.local";
+    hitRateLimit.mockResolvedValueOnce(false);
+    const res = await get("/api/files/refresh", {}, {
+      method: "POST",
+      headers: { cookie: await cookieFor("guest@zee.local", "Tamu"), "content-type": "application/json" },
+      body: JSON.stringify({ folderId: "root" }),
+    });
+    expect(res.status).toBe(429);
   });
 });
 
