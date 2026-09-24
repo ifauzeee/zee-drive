@@ -221,3 +221,34 @@ export async function pruneActivity(db: D1Database, maxAgeSeconds: number): Prom
     .run();
   return result.meta.changes ?? 0;
 }
+
+/**
+ * Atomic fixed-window counter: single guarded upsert, no read-then-write race.
+ * Over-limit => the DO UPDATE WHERE condition fails so zero rows change, and
+ * hitRateLimit reports the miss from meta.changes.
+ */
+export const HIT_RATE_LIMIT_SQL = `INSERT INTO rate_limits (scope, key, window_start, count) VALUES (?, ?, ?, 1)
+       ON CONFLICT(scope, key, window_start) DO UPDATE SET count = count + 1 WHERE count < ?`;
+
+export async function hitRateLimit(
+  db: D1Database,
+  scope: string,
+  key: string,
+  windowStart: number,
+  limit: number,
+): Promise<boolean> {
+  const result = await db
+    .prepare(HIT_RATE_LIMIT_SQL)
+    .bind(scope, key, windowStart, limit)
+    .run();
+  return (result.meta.changes ?? 1) > 0;
+}
+
+/** Cron maintenance: drop rate-limit rows whose window has long passed. */
+export async function pruneRateLimits(db: D1Database, maxAgeSeconds: number): Promise<number> {
+  const result = await db
+    .prepare(`DELETE FROM rate_limits WHERE window_start < ?`)
+    .bind(Math.floor(Date.now() / 1000) - maxAgeSeconds)
+    .run();
+  return result.meta.changes ?? 0;
+}

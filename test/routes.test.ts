@@ -14,11 +14,13 @@ vi.mock("../src/db", async () => ({
   getSession: vi.fn(),
   getShareLink: vi.fn().mockResolvedValue(null),
   getSetting: vi.fn().mockResolvedValue(null),
+  hitRateLimit: vi.fn().mockResolvedValue(true),
   listActivity: vi.fn().mockResolvedValue([]),
   listFolderPasswords: vi.fn().mockResolvedValue([]),
   listShareLinks: vi.fn().mockResolvedValue([]),
   logActivity: vi.fn().mockResolvedValue(undefined),
   pruneActivity: vi.fn().mockResolvedValue(0),
+  pruneRateLimits: vi.fn().mockResolvedValue(0),
   pruneSessions: vi.fn().mockResolvedValue(0),
   pruneShareLinks: vi.fn().mockResolvedValue(0),
   removeFolderPassword: vi.fn().mockResolvedValue(false),
@@ -54,6 +56,7 @@ const getSetting = vi.mocked(db.getSetting);
 const getFolderPassword = vi.mocked(db.getFolderPassword);
 const getSession = vi.mocked(db.getSession);
 const getShareLink = vi.mocked(db.getShareLink);
+const hitRateLimit = vi.mocked(db.hitRateLimit);
 const getAncestors = vi.mocked(drive.getAncestors);
 const getBreadcrumb = vi.mocked(drive.getBreadcrumb);
 const getMeta = vi.mocked(drive.getMeta);
@@ -128,6 +131,8 @@ beforeEach(() => {
   // value into the next test that does call it.
   getShareLink.mockReset();
   getShareLink.mockResolvedValue(null);
+  hitRateLimit.mockReset();
+  hitRateLimit.mockResolvedValue(true);
   getSession.mockImplementation(async (_db: D1Database, jti: string) => ({
     jti,
     email: activeSessionEmail,
@@ -343,18 +348,37 @@ describe("mobile access", () => {
   });
 });
 
-describe("download rate limit", () => {
+describe("rate limiting", () => {
   it("rejects a client past the per-IP fetch cap", async () => {
-    const ckv = { get: vi.fn().mockResolvedValue("1000"), put: vi.fn(), delete: vi.fn(), list: vi.fn() };
-    const res = await get("/d/F1", env({ CACHE: ckv }), {
-      headers: { cookie: await cookieFor(ADMIN_DB, "Admin") },
+    hitRateLimit.mockResolvedValueOnce(false);
+    const res = await get("/d/F1", {}, { headers: { cookie: await cookieFor(ADMIN_DB, "Admin") } });
+    expect(res.status).toBe(429);
+  });
+
+  it("fails open and serves downloads when the limiter errors", async () => {
+    hitRateLimit.mockRejectedValueOnce(new Error("db down"));
+    const res = await get("/d/F1", {}, { headers: { cookie: await cookieFor(ADMIN_DB, "Admin") } });
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects an unlock attempt past the cap", async () => {
+    hitRateLimit.mockResolvedValueOnce(false);
+    const res = await get("/api/folder/unlock", {}, {
+      method: "POST",
+      headers: { cookie: await cookieFor(ADMIN_DB, "Admin"), "content-type": "application/json" },
+      body: JSON.stringify({ folderId: "PROT", password: "salah" }),
     });
     expect(res.status).toBe(429);
   });
 
-  it("serves downloads when CACHE is unbound", async () => {
-    const res = await get("/d/F1", {}, { headers: { cookie: await cookieFor(ADMIN_DB, "Admin") } });
-    expect(res.status).toBe(200);
+  it("fails closed on unlock when the limiter errors", async () => {
+    hitRateLimit.mockRejectedValueOnce(new Error("db down"));
+    const res = await get("/api/folder/unlock", {}, {
+      method: "POST",
+      headers: { cookie: await cookieFor(ADMIN_DB, "Admin"), "content-type": "application/json" },
+      body: JSON.stringify({ folderId: "PROT", password: "salah" }),
+    });
+    expect(res.status).toBe(500);
   });
 });
 
