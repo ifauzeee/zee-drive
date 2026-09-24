@@ -43,6 +43,7 @@ import {
   listShareLinks,
   logActivity,
   pruneActivity,
+  pruneRateLimits,
   pruneSessions,
   pruneShareLinks,
   removeFolderPassword,
@@ -320,7 +321,7 @@ app.post("/api/folder/unlock", requireSession, async (c) => {
     if (!body?.folderId || typeof body.password !== "string") {
       return c.json({ error: "folderId dan password diperlukan." }, 400);
     }
-    await checkRate(c.env, "unlock", `${clientIp(c)}:${body.folderId}`, 10, 600);
+    await checkRate(c.env, "unlock", `${clientIp(c)}:${body.folderId}`, 10, 600, false);
     const row = await getFolderPassword(c.env.DB, body.folderId);
     if (!row) return c.json({ error: "Folder tidak dilindungi." }, 404);
     const ok = await verifyPassword(body.password, row.hash);
@@ -550,7 +551,7 @@ app.get("/api/s/:token", async (c) => {
 // Public: unlock — share password (default) or folder password (body.folderId).
 app.post("/api/s/:token/unlock", async (c) => {
   try {
-    await checkRate(c.env, "share-unlock", `${clientIp(c)}:${c.req.param("token")}`, 10, 300);
+    await checkRate(c.env, "share-unlock", `${clientIp(c)}:${c.req.param("token")}`, 10, 300, false);
     const { row } = await resolveShare(c, c.req.param("token") ?? "");
     const body = (await c.req.json().catch(() => null)) as {
       password?: string;
@@ -856,7 +857,10 @@ async function scheduled(_event: unknown, env: AppEnv) {
   const shareLinks = await pruneShareLinks(env.DB);
   const activity = await pruneActivity(env.DB, 90 * 24 * 3600);
   const sessions = await pruneSessions(env.DB);
-  console.log(`scheduled cleanup: ${shareLinks} share links, ${activity} activity rows, ${sessions} sessions`);
+  const rateLimits = await pruneRateLimits(env.DB, 86_400);
+  console.log(
+    `scheduled cleanup: ${shareLinks} share links, ${activity} activity rows, ${sessions} sessions, ${rateLimits} rate-limit rows`,
+  );
 }
 
 const worker: ExportedHandler<AppEnv> = {

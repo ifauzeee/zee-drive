@@ -1,44 +1,60 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { checkRate } from "../src/rate";
 import { HttpError } from "../src/errors";
+import { hitRateLimit } from "../src/db";
 
-function fakeKv(store: Map<string, string>): KVNamespace {
-  return {
-    get: async (key: string) => store.get(key) ?? null,
-    put: async (key: string, value: unknown) => {
-      store.set(key, String(value));
-    },
-  } as unknown as KVNamespace;
+vi.mock("../src/db", async () => ({
+  hitRateLimit: vi.fn(),
+}));
+
+const hitMock = vi.mocked(hitRateLimit);
+
+function env(db: D1Database) {
+  return { DB: db } as never;
 }
 
+beforeEach(() => {
+  vi.useRealTimers();
+  hitMock.mockReset();
+  hitMock.mockResolvedValue(true);
+});
+
 describe("checkRate", () => {
-  it("is a no-op when CACHE is unbound", async () => {
-    await expect(checkRate({ CACHE: undefined } as never, "s", "k", 1, 60)).resolves.toBeUndefined();
+  it("allows requests while under the limit", async () => {
+    await expect(checkRate(env({} as D1Database), "unlock", "ip:1", 10, 600)).resolves.toBeUndefined();
+    expect(hitMock).toHaveBeenCalledTimes(1);
   });
 
-  it("increments the counter while under the limit", async () => {
-    const store = new Map<string, string>();
-    const env = { CACHE: fakeKv(store) } as never;
-    await checkRate(env, "s", "k", 2, 60);
-    await checkRate(env, "s", "k", 2, 60);
-    expect(store.get("rl:s:k")).toBe("2");
+  it("rejects with 429 once the limit is reached", async () => {
+    hitMock.mockResolvedValue(false);
+    await expect(checkRate(env({} as D1Database), "unlock", "ip:1", 10, 600)).rejects.toBeInstanceOf(HttpError);
+    await expect(checkRate(env({} as D1Database), "unlock", "ip:1", 10, 600)).rejects.toMatchObject({ status: 429 });
   });
 
-  it("rejects once the limit is reached", async () => {
-    const store = new Map<string, string>();
-    const env = { CACHE: fakeKv(store) } as never;
-    await checkRate(env, "s", "k", 2, 60);
-    await checkRate(env, "s", "k", 2, 60);
-    await expect(checkRate(env, "s", "k", 2, 60)).rejects.toBeInstanceOf(HttpError);
-    await expect(checkRate(env, "s", "k", 2, 60)).rejects.toMatchObject({ status: 429 });
+  it("aligns the window start to the fixed window, not the raw timestamp", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(12_345_678_000));
+    await checkRate(env({} as D1Database), "unlock", "ip:1", 10, 600);
+    expect(hitMock).toHaveBeenCalledWith(expect.anything(), "unlock", "ip:1", 12_345_600, 10);
   });
 
   it("counts scopes and keys independently", async () => {
-    const store = new Map<string, string>();
-    const env = { CACHE: fakeKv(store) } as never;
-    await checkRate(env, "a", "x", 1, 60);
-    await expect(checkRate(env, "a", "y", 1, 60)).resolves.toBeUndefined();
-    await expect(checkRate(env, "b", "x", 1, 60)).resolves.toBeUndefined();
-    await expect(checkRate(env, "a", "x", 1, 60)).rejects.toMatchObject({ status: 429 });
+    const e = env({} as D1Database);
+    await checkRate(e, "a", "x", 1, 60);
+    await checkRate(e, "a", "y", 1, 60);
+    await checkRate(e, "b", "x", 1, 60);
+    expect(hitMock).toHaveBeenNthCalledWith(1, expect.anything(), "a", "x", expect.any(Number), 1);
+    expect(hitMock).toHaveBeenNthCalledWith(2, expect.anything(), "a", "y", expect.any(Number), 1);
+    expect(hitMock).toHaveBeenNthCalledWith(3, expect.anything(), "b", "x", expect.any(Number), 1);
+  });
+
+  it("fails open when the database errors (default)", async () => {
+    hitMock.mockRejectedValueOnce(new Error("db down"));
+    await expect(checkRate(env({} as D1Database), "fetch", "ip:1", 300, 60)).resolves.toBeUndefined();
+  });
+
+  it("fails closed for password endpoints when the database errors", async () => {
+    hitMock.mockRejectedValueOnce(new Error("db down"));
+    await expect(checkRate(env({} as D1Database), "unlock", "ip:1", 10, 600, false)).rejects.toThrow("db down");
   });
 });
