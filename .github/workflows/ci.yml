@@ -20,10 +20,21 @@ jobs:
       - run: npm test
       - run: npm run build:web
 
+  # secrets context is not allowed in job-level `if`, so a tiny gate job
+  # exposes whether the Google credentials exist and e2e keys off its output.
+  e2e-gate:
+    runs-on: ubuntu-latest
+    outputs:
+      ok: ${{ steps.check.outputs.ok }}
+    steps:
+      - id: check
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+        run: echo "ok=$([ -n "$GOOGLE_CLIENT_ID" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
   e2e:
-    # Needs real Google API credentials to reach Drive; runs only when the
-    # repo has them configured, so it can be green without a live archive.
-    if: ${{ secrets.GOOGLE_CLIENT_ID != '' }}
+    needs: e2e-gate
+    if: needs.e2e-gate.outputs.ok == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
