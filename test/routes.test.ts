@@ -625,7 +625,7 @@ describe("admin refresh", () => {
       body: JSON.stringify({ folderId: "root" }),
     });
     expect(res.status).toBe(200);
-    expect(cacheDelete).toHaveBeenCalledWith("list:root");
+    expect(cacheDelete).toHaveBeenCalledWith("list2:root");
     expect(cacheDelete).toHaveBeenCalledWith("meta:root");
   });
 
@@ -730,7 +730,7 @@ describe("upload", () => {
     });
     expect(res.status).toBe(200);
     expect(await json(res)).toEqual({ file: { id: "f1", name: "a.txt" } });
-    expect(cacheDelete).toHaveBeenCalledWith("list:root");
+    expect(cacheDelete).toHaveBeenCalledWith("list2:root");
     expect(logActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: "upload" }));
     vi.unstubAllGlobals();
   });
