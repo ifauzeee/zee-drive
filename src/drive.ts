@@ -297,6 +297,10 @@ export async function proxyFile(
   responseHeaders.set("accept-ranges", "bytes");
   responseHeaders.set("cache-control", "private, max-age=3600");
   responseHeaders.set("x-content-type-options", "nosniff");
+  // Byte endpoints must not be frameable by attacker sites; SAMEORIGIN keeps
+  // our own in-app PDF preview iframes working while blocking external framing.
+  responseHeaders.set("x-frame-options", "SAMEORIGIN");
+  responseHeaders.set("content-security-policy", "frame-ancestors 'self'");
 
   for (const header of ["content-length", "content-range"]) {
     const value = upstream.headers.get(header);

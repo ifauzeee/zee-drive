@@ -110,6 +110,13 @@ describe("proxyFile XSS hardening", () => {
     expect(res.headers.get("content-disposition")).toContain("inline");
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
   });
+
+  it("sets frame-protection headers so external sites cannot frame bytes", async () => {
+    stubMediaFetch("application/pdf");
+    const res = await proxyFile(driveEnv as never, "P2", { inline: true });
+    expect(res.headers.get("x-frame-options")).toBe("SAMEORIGIN");
+    expect(res.headers.get("content-security-policy")).toBe("frame-ancestors 'self'");
+  });
 });
 
 describe("searchDrive", () => {
