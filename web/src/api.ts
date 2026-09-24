@@ -42,6 +42,13 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   config: () => req<{ appName: string; rootFolderId: string; guestLogin: boolean }>("/api/config"),
+  localAdminLogin: (username: string, password: string) =>
+    fetch("/auth/admin", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    }),
   me: () => req<{ user: Me }>("/api/auth/me"),
   files: (folder: string) =>
     req<{ files: DriveFile[]; crumbs: Crumb[]; truncated?: boolean }>(`/api/files?folder=${encodeURIComponent(folder)}`),

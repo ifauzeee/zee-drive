@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { logger } from "hono/logger";
 import type { Context } from "hono";
 import type { AppEnv } from "./env";
-import { isAdmin, missingEnv } from "./env";
+import { allowedEmails, isAdmin, missingEnv } from "./env";
 import { HttpError, LockedError } from "./errors";
 import {
   SESSION_COOKIE,
@@ -204,6 +204,43 @@ app.get("/auth/guest", async (c) => {
   headers.append("set-cookie", serializeCookie(SESSION_COOKIE, token, cookieOpts(c)));
   await logActivity(c.env.DB, { actor: GUEST_EMAIL, action: "login.guest" });
   return new Response(null, { status: 302, headers });
+});
+
+// Local admin login with username + password. Credentials come from
+// ADMIN_USER / ADMIN_PASSWORD_HASH (PBKDF2, same format as folder passwords);
+// unset vars disable the endpoint entirely. The session adopts the first
+// email in ALLOWED_EMAILS, so all admin guards keep working unchanged.
+// ponytail: single shared account; per-user accounts if the admin list grows.
+app.post("/auth/admin", async (c) => {
+  const adminUser = c.env.ADMIN_USER;
+  const adminHash = c.env.ADMIN_PASSWORD_HASH;
+  if (!adminUser || !adminHash || allowedEmails(c.env).length === 0) {
+    return c.json({ error: "Login lokal admin tidak dikonfigurasi." }, 404);
+  }
+  try {
+    await checkRate(c.env, "admin-login", clientIp(c), 5, 300, false);
+    const body = (await c.req.json().catch(() => null)) as
+      | { username?: string; password?: string }
+      | null;
+    const okUser = typeof body?.username === "string" && body.username === adminUser;
+    // Verify the password even when the username is wrong, so response timing
+    // does not leak which half failed.
+    const okPass =
+      typeof body?.password === "string" && (await verifyPassword(body.password, adminHash));
+    if (!okUser || !okPass) {
+      return c.json({ error: "Username atau password salah." }, 401);
+    }
+    const email = allowedEmails(c.env)[0]!;
+    const session = newSession(email, "Admin");
+    await createSession(c.env.DB, session.jti, email, SESSION_MAX_AGE);
+    const token = await signSession(session, c.env.SESSION_SECRET);
+    const headers = new Headers({ location: "/", "cache-control": "no-store" });
+    headers.append("set-cookie", serializeCookie(SESSION_COOKIE, token, cookieOpts(c)));
+    await logActivity(c.env.DB, { actor: email, action: "login.local" });
+    return new Response(null, { status: 302, headers });
+  } catch (error) {
+    return errorJson(c, error);
+  }
 });
 
 app.post("/logout", async (c) => {
