@@ -796,6 +796,11 @@ app.post("/api/files/refresh", requireSession, async (c) => {
     if (c.env.CACHE) {
       await c.env.CACHE.delete(`list2:${body.folderId}`);
       await c.env.CACHE.delete(`meta:${body.folderId}`);
+      // Search results embed folder listings, so drop them too. ponytail:
+      // KV list+delete per key; fine at archive scale, switch a search to
+      // a versioned prefix if the key count ever grows unbounded.
+      const cached = await c.env.CACHE.list({ prefix: "search:" });
+      await Promise.all(cached.keys.map((k) => c.env.CACHE!.delete(k.name)));
     }
     return c.json({ ok: true });
   } catch (error) {

@@ -619,7 +619,14 @@ describe("folder refresh", () => {
   it("busts the folder list and meta cache for any session", async () => {
     activeSessionEmail = "guest@zee.local";
     const cacheDelete = vi.fn();
-    const ckv = { get: vi.fn(), put: vi.fn(), delete: cacheDelete, list: vi.fn() };
+    const ckv = {
+      get: vi.fn(),
+      put: vi.fn(),
+      delete: cacheDelete,
+      list: vi.fn().mockResolvedValue({
+        keys: [{ name: "search:root:pdf" }, { name: "search:root:buku" }],
+      }),
+    };
     const res = await get("/api/files/refresh", env({ CACHE: ckv }), {
       method: "POST",
       headers: { cookie: await cookieFor("guest@zee.local", "Tamu"), "content-type": "application/json" },
@@ -628,6 +635,9 @@ describe("folder refresh", () => {
     expect(res.status).toBe(200);
     expect(cacheDelete).toHaveBeenCalledWith("list2:root");
     expect(cacheDelete).toHaveBeenCalledWith("meta:root");
+    expect(ckv.list).toHaveBeenCalledWith({ prefix: "search:" });
+    expect(cacheDelete).toHaveBeenCalledWith("search:root:pdf");
+    expect(cacheDelete).toHaveBeenCalledWith("search:root:buku");
   });
 
   it("rejects unauthenticated callers", async () => {
