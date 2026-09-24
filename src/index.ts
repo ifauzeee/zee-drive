@@ -785,14 +785,22 @@ app.post("/api/admin/config", requireAdmin, async (c) => {
   return c.json({ ok: true });
 });
 
-app.post("/api/admin/refresh", requireAdmin, async (c) => {
-  const body = (await c.req.json().catch(() => null)) as { folderId?: string } | null;
-  if (!body?.folderId) return c.json({ error: "folderId diperlukan." }, 400);
-  if (c.env.CACHE) {
-    await c.env.CACHE.delete(`list2:${body.folderId}`);
-    await c.env.CACHE.delete(`meta:${body.folderId}`);
+// Any signed-in session may refresh: it only drops the KV cache, and every
+// file shown still goes through requireUnlocked. Rate-limited so it cannot be
+// used to hammer the Drive API.
+app.post("/api/files/refresh", requireSession, async (c) => {
+  try {
+    await checkRate(c.env, "refresh", clientIp(c), 10, 60);
+    const body = (await c.req.json().catch(() => null)) as { folderId?: string } | null;
+    if (!body?.folderId) return c.json({ error: "folderId diperlukan." }, 400);
+    if (c.env.CACHE) {
+      await c.env.CACHE.delete(`list2:${body.folderId}`);
+      await c.env.CACHE.delete(`meta:${body.folderId}`);
+    }
+    return c.json({ ok: true });
+  } catch (error) {
+    return errorJson(c, error);
   }
-  return c.json({ ok: true });
 });
 
 app.get("/api/admin/activity", requireAdmin, async (c) => {
