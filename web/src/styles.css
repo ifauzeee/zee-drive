@@ -449,17 +449,69 @@ a.filecard:hover { border-color: var(--line); background: var(--bg-2); text-deco
 }
 .player video, .player audio { display: block; width: 100%; max-height: 72vh; object-fit: contain; }
 .player audio { background: var(--bg-1); }
+
+.media-host { position: relative; width: 100%; display: flex; justify-content: center; }
+
+/* Plyr skinned to the app palette: warm amber accent, dark translucent bar,
+   roomier touch targets, no default blue. */
 .player {
   --plyr-color-main: var(--primary);
   --plyr-video-control-color: #fff;
-  --plyr-control-icon-size: 16px;
+  --plyr-video-control-color-hover: var(--primary);
+  --plyr-video-progress-buffered-background: rgba(255,255,255,0.28);
+  --plyr-range-track-height: 5px;
+  --plyr-range-thumb-height: 15px;
+  --plyr-range-thumb-width: 15px;
+  --plyr-control-icon-size: 18px;
+  --plyr-control-spacing: 10px;
+  --plyr-control-radius: 8px;
+  --plyr-menu-background: rgba(18,18,18,0.96);
+  --plyr-menu-color: #fff;
+  --plyr-menu-border-color: var(--line);
+  --plyr-menu-radius: 10px;
+  --plyr-tooltip-background: rgba(18,18,18,0.94);
+  --plyr-tooltip-color: #fff;
+  --plyr-tooltip-radius: 6px;
+  --plyr-tooltip-padding: 6px 9px;
+  --plyr-tooltip-arrow-display: none;
+  --plyr-captions-background: rgba(0,0,0,0.82);
+  --plyr-captions-color: #fff;
+  --plyr-font-size-base: 15px;
+  --plyr-font-size-small: 13px;
 }
-.player .plyr { max-height: 72vh; }
-.player .plyr__video-wrapper video { width: 100%; max-height: 72vh; object-fit: contain; }
-.player .plyr__control--overlaid { background: rgba(0,0,0,0.6) !important; }
+.player .plyr { max-height: 72vh; width: 100%; }
+.player .plyr__video-wrapper video { width: 100%; max-height: 72vh; object-fit: contain; background: #000; }
+.player .plyr__video-wrapper { background: #000; border-radius: var(--radius); }
+.player .plyr__controls { background: linear-gradient(to top, rgba(0,0,0,0.82), rgba(0,0,0,0.35)); }
+.player .plyr__control--overlaid { background: rgba(0,0,0,0.55) !important; }
 .player .plyr__control--overlaid:hover { background: var(--primary) !important; }
-:root[data-theme="light"] .player .plyr__control--overlaid { background: rgba(255,255,255,0.75) !important; }
+:root[data-theme="light"] .player .plyr__control--overlaid { background: rgba(255,255,255,0.8) !important; }
 .player audio .plyr__controls { background: var(--bg-1) !important; }
+.player .plyr__control--volume { min-width: 92px; }
+.player .plyr__progress { padding-top: 6px; }
+.player .plyr--full-ui input[type=range] { color: var(--primary); }
+.player .plyr__menu__item--active { background: var(--primary-dim); }
+/* Captions sit above the control bar, never under it. */
+.player .plyr__captions { font-size: var(--plyr-font-size-base); text-shadow: 0 1px 3px rgba(0,0,0,0.9); }
+
+.resume-chip {
+  position: absolute; top: 12px; left: 12px; z-index: 3;
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px 6px 12px; border-radius: 999px;
+  background: rgba(18,18,18,0.86); border: 1px solid var(--line);
+  color: var(--ink-1); font-size: var(--text-sm);
+  backdrop-filter: blur(6px);
+}
+.resume-chip strong { color: var(--primary); font-variant-numeric: tabular-nums; }
+.btn.tiny { padding: 3px 9px; font-size: var(--text-xs); border-radius: 999px; }
+
+@media (max-width: 640px) {
+  /* Bigger targets, and the bar stays reachable above the browser chrome. */
+  .player .plyr { --plyr-control-spacing: 12px; --plyr-control-icon-size: 20px; }
+  .player .plyr__controls { padding-bottom: 10px; }
+  .player .plyr__control--volume { display: none; }
+  .resume-chip { top: 8px; left: 8px; }
+}
 .preview-img { max-width: 100%; border-radius: var(--radius); border: 1px solid var(--line-soft); display: block; }
 .filehead {
   display: flex; gap: 14px; align-items: center; flex-wrap: wrap;

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError, api, formatBytes, formatDate, kindOf } from "../api";
 import type { DriveFile, LockInfo } from "../types";
 import { FileBadge, FileCard, ImageLightbox, MediaPlayer, Notice, copyText } from "../components";
+import { isBrowserPlayable, pickSubtitle } from "../media";
 import { UnlockGate } from "./Browse";
 import { navigate } from "../nav";
 
@@ -75,7 +76,7 @@ export default function FileView({ fileId }: { fileId: string }) {
   useEffect(() => {
     if (!parent || !file) return;
     api.files(parent)
-      .then((res) => setSiblings(res.files.filter((f) => f.id !== file.id).slice(0, 8)))
+      .then((res) => setSiblings(res.files.filter((f) => f.id !== file.id)))
       .catch(() => {});
   }, [parent, file]);
 
@@ -120,13 +121,45 @@ export default function FileView({ fileId }: { fileId: string }) {
     setCopiedLink(ok);
   }
 
-  const preview = kind === "video" ? (
+  // Sibling subtitle with the same name, streamed through the same byte proxy.
+  const subtitle = media ? pickSubtitle(siblings, file.name) : null;
+  const playable = media ? isBrowserPlayable(file.name) : false;
+  const sizeBytes = file.size ? Number(file.size) : undefined;
+
+  const unsupported = (kind === "video" || kind === "audio") && !playable;
+  const preview = unsupported ? (
+    <div className="preview-fallback">
+      <FileBadge mime={file.mimeType} />
+      <span>Format {file.name.split(".").pop()?.toUpperCase()} tidak bisa diputar di browser.</span>
+      <span className="sub">
+        Pemutar web hanya mendukung MP4, WebM, MOV, MP3, dan beberapa format umum. Unduh file untuk
+        memutarnya di aplikasi lain.
+      </span>
+      <a className="btn primary" href={dlUrl} download style={{ marginTop: 10 }}>
+        Unduh file
+      </a>
+    </div>
+  ) : kind === "video" ? (
     <div className="player">
-      <MediaPlayer kind="video" src={pvUrl} poster={file.thumbnailLink ?? undefined} />
+      <MediaPlayer
+        kind="video"
+        src={pvUrl}
+        poster={file.thumbnailLink ?? undefined}
+        fileId={file.id}
+        fileName={file.name}
+        sizeBytes={sizeBytes}
+        subtitleSrc={subtitle ? `/p/${subtitle.id}` : undefined}
+      />
     </div>
   ) : kind === "audio" ? (
     <div className="player">
-      <MediaPlayer kind="audio" src={pvUrl} />
+      <MediaPlayer
+        kind="audio"
+        src={pvUrl}
+        fileId={file.id}
+        fileName={file.name}
+        sizeBytes={sizeBytes}
+      />
     </div>
   ) : kind === "image" ? (
     <button
@@ -217,7 +250,7 @@ export default function FileView({ fileId }: { fileId: string }) {
         <div className="related">
           <h3>File lain di folder ini</h3>
           <div className="filegrid">
-            {siblings.map((s) => (
+            {siblings.slice(0, 8).map((s) => (
               <FileCard key={s.id} file={s} />
             ))}
           </div>
