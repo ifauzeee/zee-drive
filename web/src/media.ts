@@ -61,6 +61,21 @@ export function resumeAt(seconds: number): number {
   return Number.isFinite(seconds) && seconds > RESUME_MIN_SEC ? Math.floor(seconds) : 0;
 }
 
+// Rows rendered per page. Large folders used to mount every row at once.
+export const PAGE_ROWS = 300;
+
+export function pageSize(total: number, extra = 0): number {
+  return Math.min(total, PAGE_ROWS + extra);
+}
+
+// Archives are built in the browser, so a single huge file has to be refused
+// up front: client-zip otherwise yields a 0-byte entry and a broken download.
+export const ZIP_MAX_BYTES = 512 * 1024 * 1024;
+
+export function tooBigForZip(size: number): boolean {
+  return Number.isFinite(size) && size > ZIP_MAX_BYTES;
+}
+
 const RESUME_KEY = "zee:resume";
 
 // Chrome's PDF viewer inside an iframe renders pages at a fixed width, which

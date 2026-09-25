@@ -5,6 +5,7 @@ import { ApiError, api, formatBytes, formatDate, kindOf } from "../api";
 import type { Crumb, DriveFile, LockInfo, Me, SearchResult } from "../types";
 import { Empty, FileBadge, FileCard, Modal, Notice, ShortcutHelp, SkeletonCard, SkeletonRow, copyText, useToast } from "../components";
 import { navigate } from "../nav";
+import { PAGE_ROWS, pageSize, tooBigForZip, ZIP_MAX_BYTES } from "../media";
 
 type View = "list" | "grid";
 type Sort = "name" | "size" | "date";
@@ -162,22 +163,47 @@ export default function Browse({
 
   const isSearching = debounced.trim().length >= 2;
 
-  async function downloadZipFolder() {
-    if (!files) return;
-    const topFiles = files.filter((f) => kindOf(f.mimeType) !== "folder");
-    const topFolders = files.filter((f) => kindOf(f.mimeType) === "folder");
-    if (topFiles.length === 0 && topFolders.length === 0) {
+  // Mounting thousands of rows at once is what stalls a phone, so the list
+  // grows on request instead.
+  const [extraRows, setExtraRows] = useState(0);
+  useEffect(() => { setExtraRows(0); }, [folderId, sort, view]);
+  const visibleCount = pageSize(shown.length, extraRows);
+  const visible = useMemo(() => shown.slice(0, visibleCount), [shown, visibleCount]);
+  const hidden = shown.length - visible.length;
+
+  // Selection for "download picked". Folders are kept whole; files are taken
+  // as-is, then the same recursive collector the whole-folder zip uses.
+  const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  useEffect(() => { setPicked(new Set()); }, [folderId]);
+  const pickedFiles = useMemo(
+    () => (files ?? []).filter((f) => picked.has(f.id)),
+    [files, picked],
+  );
+  const togglePick = useCallback((id: string) => {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  async function zipAndSave(topLevel: DriveFile[], zipName: string) {
+    if (topLevel.length === 0) {
       push("info", "Tidak ada file untuk diarsipkan.");
       return;
     }
     setZipping(true);
     try {
-      const { items, skipped, truncated } = await collectTree(files);
+      const { items, skipped, tooBig, truncated } = await collectTree(topLevel);
       if (items.length === 0) {
-        push("error", "Tidak ada file yang bisa diarsipkan.");
+        push("error", tooBig > 0
+          ? `Tidak ada file yang bisa diarsipkan — ${tooBig} file melebihi ${Math.round(ZIP_MAX_BYTES / (1024 * 1024))} MB.`
+          : "Tidak ada file yang bisa diarsipkan.");
         return;
       }
-      if (truncated) push("info", "Batas arsip tercapai — sebagian file dilewatkan.");
+      if (tooBig > 0) push("info", `${tooBig} file terlalu besar (>${Math.round(ZIP_MAX_BYTES / (1024 * 1024))} MB) dan dilewati — unduh satu per satu.`);
+      if (truncated) push("info", "Batas arsip tercapai — sebagian file dilewati.");
       const sources = await Promise.all(
         items.map(async (f) => {
           const res = await fetch(`/d/${f.id}`, { credentials: "same-origin" });
@@ -190,7 +216,7 @@ export default function Browse({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${crumbs[crumbs.length - 1]?.name ?? "arsip"}.zip`;
+      a.download = `${zipName}.zip`;
       a.click();
       URL.revokeObjectURL(url);
       push("ok", `Arsip dibuat (${items.length} file${skipped ? `, ${skipped} folder terkunci dilewati` : ""}).`);
@@ -199,6 +225,15 @@ export default function Browse({
     } finally {
       setZipping(false);
     }
+  }
+
+  function downloadZipFolder() {
+    if (!files) return;
+    void zipAndSave(files, crumbs[crumbs.length - 1]?.name ?? "arsip");
+  }
+
+  function downloadPicked() {
+    void zipAndSave(pickedFiles, `terpilih-${pickedFiles.length}`);
   }
 
   const folders = shown.filter((f) => kindOf(f.mimeType) === "folder").length;
@@ -356,17 +391,48 @@ export default function Browse({
         <Empty title="Folder kosong." />
       ) : view === "list" ? (
         <div className="filelist" role="list">
-          {shown.map((f) => (
-            <Row key={f.id} file={f} me={me} onShare={() => setShareTarget(f)} onOpenFile={(id) => openFileFromFolder(folderId, files ?? [], id)} />
+          {visible.map((f) => (
+            <Row key={f.id} file={f} me={me} onShare={() => setShareTarget(f)} onOpenFile={(id) => openFileFromFolder(folderId, files ?? [], id)} selected={picked.has(f.id)} onToggle={() => togglePick(f.id)} />
           ))}
         </div>
       ) : (
         <div className="filegrid">
-          {shown.map((f) => (
-            <FileCard key={f.id} file={f} onOpen={(file) => (kindOf(file.mimeType) === "folder" ? navigate(`/b/${file.id}`) : openFileFromFolder(folderId, files ?? [], file.id))} />
+          {visible.map((f) => (
+            <FileCard key={f.id} file={f} selected={picked.has(f.id)} onToggle={() => togglePick(f.id)} onOpen={(file) => (kindOf(file.mimeType) === "folder" ? navigate(`/b/${file.id}`) : openFileFromFolder(folderId, files ?? [], file.id))} />
           ))}
         </div>
       )}
+
+      {picked.size > 0 ? (
+        <div className="pickbar" role="region" aria-label="Pilihan file">
+          <span className="pickbar-count">{picked.size} dipilih</span>
+          <button className="btn primary" onClick={downloadPicked} disabled={zipping}>
+            {zipping ? "Menggabung…" : "Unduh terpilih"}
+          </button>
+          <button className="btn" onClick={() => setPicked(new Set())} disabled={zipping}>
+            Batal
+          </button>
+        </div>
+      ) : null}
+
+      {hidden > 0 ? (
+        <div className="loadmore">
+          <span className="loadmore-note">
+            Menampilkan {visible.length} dari {shown.length.toLocaleString("id-ID")} item
+          </span>
+          <button
+            className="btn"
+            onClick={() => setExtraRows((n) => n + PAGE_ROWS)}
+          >
+            Tampilkan {Math.min(hidden, PAGE_ROWS).toLocaleString("id-ID")} lagi
+          </button>
+          {hidden > PAGE_ROWS ? (
+            <button className="btn" onClick={() => setExtraRows(shown.length)}>
+              Tampilkan semua
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {shareTarget ? <ShareDialog file={shareTarget} onClose={() => setShareTarget(null)} /> : null}
       {showUpload ? (
@@ -453,7 +519,7 @@ function RefreshGlyph() {
   );
 }
 
-function Row({ file, me, onShare, onOpenFile }: { file: DriveFile; me: Me; onShare: () => void; onOpenFile: (id: string) => void }) {
+function Row({ file, me, onShare, onOpenFile, selected, onToggle }: { file: DriveFile; me: Me; onShare: () => void; onOpenFile: (id: string) => void; selected?: boolean; onToggle?: () => void }) {
   const folder = kindOf(file.mimeType) === "folder";
   const to = folder ? `/b/${file.id}` : `/f/${file.id}`;
   const img = file.thumbnailLink && kindOf(file.mimeType) === "image";
@@ -465,6 +531,14 @@ function Row({ file, me, onShare, onOpenFile }: { file: DriveFile; me: Me; onSha
         onClick={(e) => { e.preventDefault(); if (folder) navigate(to); else onOpenFile(file.id); }}
         aria-label={`${folder ? "Buka folder" : "Buka file"} ${file.name}`}
       >
+        <input
+          type="checkbox"
+          className="pick"
+          checked={!!selected}
+          onChange={onToggle}
+          onClick={(e) => e.stopPropagation()}
+          aria-label={`Pilih ${file.name}`}
+        />
         {img ? (
           <img className="thumb" src={file.thumbnailLink} alt="" loading="lazy" referrerPolicy="no-referrer" />
         ) : (
@@ -667,21 +741,27 @@ const UPLOAD_MAX = 75 * 1024 * 1024;
 // Recursive folder archive guardrails: cap items and total bytes so a big tree
 // cannot exhaust browser memory, and bail early when a subfolder is locked.
 const ZIP_MAX_FILES = 150;
-const ZIP_MAX_BYTES = 512 * 1024 * 1024;
 const ZIP_MAX_DEPTH = 12;
 
-type TreeCollect = { items: DriveFile[]; skipped: number; truncated: boolean };
+type TreeCollect = { items: DriveFile[]; skipped: number; tooBig: number; truncated: boolean };
 
 async function collectTree(topLevel: DriveFile[]): Promise<TreeCollect> {
   const items: DriveFile[] = [];
   let skipped = 0;
+  let tooBig = 0;
   let truncated = false;
   let totalBytes = 0;
   const queue: { id: string; depth: number }[] = [];
 
   for (const f of topLevel) {
-    if (kindOf(f.mimeType) === "folder") queue.push({ id: f.id, depth: 1 });
-    else items.push(f);
+    if (kindOf(f.mimeType) === "folder") {
+      queue.push({ id: f.id, depth: 1 });
+    } else if (tooBigForZip(Number(f.size || 0))) {
+      // Refused up front: a 2.3 GB entry would download as a 0-byte stub.
+      tooBig++;
+    } else {
+      items.push(f);
+    }
   }
 
   while (queue.length > 0 && !truncated) {
@@ -699,7 +779,12 @@ async function collectTree(topLevel: DriveFile[]): Promise<TreeCollect> {
       if (kindOf(c.mimeType) === "folder") {
         if (depth < ZIP_MAX_DEPTH) queue.push({ id: c.id, depth: depth + 1 });
       } else {
-        totalBytes += Number(c.size || 0);
+        const size = Number(c.size || 0);
+        if (tooBigForZip(size)) {
+          tooBig++;
+          continue;
+        }
+        totalBytes += size;
         if (items.length >= ZIP_MAX_FILES || totalBytes >= ZIP_MAX_BYTES) {
           truncated = true;
           break;
@@ -709,7 +794,7 @@ async function collectTree(topLevel: DriveFile[]): Promise<TreeCollect> {
     }
   }
 
-  return { items, skipped, truncated };
+  return { items, skipped, tooBig, truncated };
 }
 
 function UploadModal({

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import sprite from "../web/public/plyr.svg?raw";
 import type { DriveFile } from "../web/src/types";
-import { baseName, formatTime, isBrowserPlayable, pdfViewerSrc, pickSubtitle, resumeAt } from "../web/src/media";
+import { baseName, formatTime, isBrowserPlayable, pageSize, pdfViewerSrc, pickSubtitle, resumeAt, tooBigForZip, ZIP_MAX_BYTES } from "../web/src/media";
 
 const file = (name: string, over: Partial<DriveFile> = {}): DriveFile =>
   ({ id: name, name, mimeType: "application/octet-stream", ...over }) as DriveFile;
@@ -23,6 +23,43 @@ describe("plyr icon sprite", () => {
     ]) {
       expect(svg).toContain(`id="${id}"`);
     }
+  });
+});
+
+describe("zipSize", () => {
+  // A 2.3 GB file was pushed into the zip anyway (the limit only guarded nested
+  // files) and produced a 0-byte entry, i.e. a silently broken archive.
+  it("rejects a single file above the archive cap", () => {
+    expect(tooBigForZip(2_420_284_976)).toBe(true);
+    expect(tooBigForZip(ZIP_MAX_BYTES)).toBe(false);
+    expect(tooBigForZip(0)).toBe(false);
+  });
+
+  it("treats an unknown size as fitting, so the byte counter still guards it", () => {
+    expect(tooBigForZip(Number.NaN)).toBe(false);
+  });
+});
+
+describe("pageSize", () => {
+  // A 4000-item folder used to render 4000 DOM rows at once, which stalls
+  // phones. The list shows a first page and grows only when asked.
+  it("caps the first page at 300 rows", () => {
+    expect(pageSize(4000)).toBe(300);
+    expect(pageSize(300)).toBe(300);
+  });
+
+  it("renders everything when the folder is small or empty", () => {
+    expect(pageSize(120)).toBe(120);
+    expect(pageSize(0)).toBe(0);
+  });
+
+  it("grows in steps once the user asks for more", () => {
+    expect(pageSize(4000, 300)).toBe(600);
+    expect(pageSize(4000, 900)).toBe(1200);
+  });
+
+  it("stops growing at the real length instead of overshooting", () => {
+    expect(pageSize(450, 300)).toBe(450);
   });
 });
 

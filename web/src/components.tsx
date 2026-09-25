@@ -98,7 +98,7 @@ export function FileBadge({ mime, locked }: { mime: string; locked?: boolean }) 
 }
 
 /* ---------- FileCard ---------- */
-export function FileCard({ file, onOpen }: { file: DriveFile; onOpen?: (file: DriveFile) => void }) {
+export function FileCard({ file, onOpen, selected, onToggle }: { file: DriveFile; onOpen?: (file: DriveFile) => void; selected?: boolean; onToggle?: () => void }) {
   const folder = kindOf(file.mimeType) === "folder";
   const to = folder ? `/b/${file.id}` : `/f/${file.id}`;
   return (
@@ -109,6 +109,14 @@ export function FileCard({ file, onOpen }: { file: DriveFile; onOpen?: (file: Dr
         ) : (
           <FileBadge mime={file.mimeType} />
         )}
+        <input
+          type="checkbox"
+          className="pick"
+          checked={!!selected}
+          onChange={onToggle}
+          onClick={(e) => e.stopPropagation()}
+          aria-label={`Pilih ${file.name}`}
+        />
       </span>
       <span className="body">
         <span className="fname">{file.name}</span>

@@ -512,6 +512,42 @@ a.filecard:hover { border-color: var(--line); background: var(--bg-2); text-deco
   .player .plyr__control--volume { display: none; }
   .resume-chip { top: 8px; left: 8px; }
 }
+/* Selection checkbox inside a row/card. The row itself is an anchor, so the
+   click is stopped in JS; visually it sits left of the thumbnail. */
+.pick {
+  flex: none; width: 18px; height: 18px; margin: 0 2px 0 2px;
+  accent-color: var(--primary); cursor: pointer;
+}
+.filecard .pick {
+  position: absolute; top: 8px; left: 8px; z-index: 2;
+  width: 20px; height: 20px;
+  background: var(--bg-1); border-radius: 4px;
+}
+.pickbar {
+  position: sticky; bottom: 0; z-index: 20;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 16px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--bg-1);
+  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.35);
+}
+.pickbar-count { font-size: var(--text-sm); color: var(--ink-2); margin-right: auto; }
+@media (max-width: 640px) {
+  .pickbar { bottom: 8px; }
+  .pickbar .btn { flex: 1; justify-content: center; }
+  .pickbar-count { width: 100%; margin-right: 0; }
+}
+
+.loadmore {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line-soft);
+}
+.loadmore-note { font-size: var(--text-sm); color: var(--ink-3); margin-right: auto; }
+@media (max-width: 640px) {
+  .loadmore .btn { flex: 1; justify-content: center; }
+  .loadmore-note { width: 100%; margin-right: 0; }
+}
+
 .preview-img { max-width: 100%; border-radius: var(--radius); border: 1px solid var(--line-soft); display: block; }
 .filehead {
   display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
