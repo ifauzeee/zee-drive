@@ -1,6 +1,7 @@
 import { Component, createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import Plyr from "plyr";
 import { formatBytes, kindOf } from "./api";
+import { clearResume, formatTime, readResume, writeResume } from "./media";
 import { navigate } from "./nav";
 import type { DriveFile } from "./types";
 
@@ -324,21 +325,141 @@ export function ImageLightbox({
 }
 
 /* ---------- MediaPlayer ---------- */
-export function MediaPlayer({ src, kind, poster }: { src: string; kind: "video" | "audio"; poster?: string }) {
+/* ---------- MediaPlayer ---------- */
+type MediaPlayerProps = {
+  src: string;
+  kind: "video" | "audio";
+  poster?: string;
+  /** File id + name drive resume position and the subtitle lookup label. */
+  fileId?: string;
+  fileName?: string;
+  sizeBytes?: number;
+  /** Sibling subtitle streamed through the same byte proxy. */
+  subtitleSrc?: string;
+};
+
+// Big files only fetch metadata up front; anything smaller gets a head start so
+// the first seconds do not stutter through the Worker/Drive hop.
+const PRELOAD_FULL_LIMIT = 200 * 1024 * 1024;
+const SAVE_EVERY_SEC = 5;
+
+export function MediaPlayer({
+  src,
+  kind,
+  poster,
+  fileId,
+  fileName,
+  sizeBytes,
+  subtitleSrc,
+}: MediaPlayerProps) {
   const elRef = useRef<HTMLElement | null>(null);
+  const playerRef = useRef<Plyr | null>(null);
+  const [resumeChip, setResumeChip] = useState<number>(0);
   const setEl = useCallback((el: HTMLElement | null) => { elRef.current = el; }, []);
+
   useEffect(() => {
     const el = elRef.current;
     if (!el) return;
     const player = new Plyr(el, {
-      controls: ["play-large", "play", "progress", "current-time", "mute", "volume", "settings", "pip", "fullscreen"],
+      controls:
+        kind === "video"
+          ? ["play-large", "play", "progress", "current-time", "mute", "volume", "captions", "settings", "pip", "fullscreen"]
+          : ["play-large", "play", "progress", "current-time", "mute", "volume", "settings"],
+      settings: ["speed"],
+      captions: { active: true, language: "auto", update: true },
+      speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
+      resetOnEnd: true,
+      loadSprite: false,
+      clickToPlay: true,
+      hideControls: false,
+      tooltips: { controls: true, seek: true },
+      keyboard: { focused: true, global: false },
+      fullscreen: { enabled: true, fallback: true, iosNative: true },
+      storage: { enabled: true, key: "zee-plyr" },
     });
-    return () => player.destroy();
-  }, [src, kind]);
+    playerRef.current = player;
+
+    let saved = 0;
+    let lastSave = 0;
+    const onLoaded = () => {
+      if (!fileId) return;
+      const at = readResume(fileId);
+      const duration = player.duration || 0;
+      // Only offer a point that is meaningfully in and still inside the video.
+      if (at > 0 && duration > 0 && at < duration - 10) {
+        player.currentTime = at;
+        saved = at;
+        setResumeChip(at);
+      }
+    };
+    const onTime = () => {
+      if (!fileId) return;
+      const t = player.currentTime || 0;
+      const duration = player.duration || 0;
+      if (t - lastSave >= SAVE_EVERY_SEC) {
+        lastSave = t;
+        if (duration > 0 && t < duration - 5) writeResume(fileId, t);
+      }
+    };
+    const onEnded = () => {
+      if (fileId) clearResume(fileId);
+      setResumeChip(0);
+    };
+
+    player.on("loadedmetadata", onLoaded);
+    player.on("timeupdate", onTime);
+    player.on("ended", onEnded);
+    return () => {
+      player.off("loadedmetadata", onLoaded);
+      player.off("timeupdate", onTime);
+      player.off("ended", onEnded);
+      if (fileId && saved) {
+        const t = player.currentTime ?? 0;
+        if (t > 0) writeResume(fileId, t);
+      }
+      player.destroy();
+      playerRef.current = null;
+    };
+  }, [src, kind, fileId, subtitleSrc]);
+
+  const startOver = () => {
+    if (fileId) clearResume(fileId);
+    setResumeChip(0);
+    const player = playerRef.current;
+    if (player) player.currentTime = 0;
+  };
+
+  const preload = sizeBytes !== undefined && sizeBytes > PRELOAD_FULL_LIMIT ? "metadata" : "auto";
+  const tracks =
+    subtitleSrc && fileName
+      ? [<track key="sub" kind="captions" label="Indonesia" srcLang="id" src={subtitleSrc} default />]
+      : null;
+
   if (kind === "video") {
-    return <video ref={(el) => setEl(el)} src={src} playsInline preload="metadata" poster={poster ?? undefined} />;
+    return (
+      <div className="media-host">
+        <video
+          ref={(el) => setEl(el)}
+          src={src}
+          playsInline
+          preload={preload}
+          poster={poster ?? undefined}
+          crossOrigin="anonymous"
+        >
+          {tracks}
+        </video>
+        {resumeChip > 0 ? (
+          <div className="resume-chip">
+            Lanjut dari <strong>{formatTime(resumeChip)}</strong>
+            <button type="button" className="btn tiny" onClick={startOver}>
+              Mulai dari awal
+            </button>
+          </div>
+        ) : null}
+      </div>
+    );
   }
-  return <audio ref={(el) => setEl(el)} src={src} preload="metadata" />;
+  return <audio ref={(el) => setEl(el)} src={src} preload={preload} />;
 }
 
 /* ---------- ShortcutHelp ---------- */
