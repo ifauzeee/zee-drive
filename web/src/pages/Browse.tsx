@@ -303,6 +303,7 @@ export default function Browse({
             aria-label="Cari file"
           />
         </label>
+        <div className="toolbar-actions">
         <button
           className="btn"
           onClick={() => void downloadZipFolder()}
@@ -328,6 +329,7 @@ export default function Browse({
           })(); }}
           title="Hapus cache folder dan muat ulang dari Drive"
         >
+          <RefreshGlyph />
           Muat ulang
         </button>
         <select className="select" value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Urutkan">
@@ -338,6 +340,7 @@ export default function Browse({
         <div className="seg" role="group" aria-label="Tampilan">
           <button aria-pressed={view === "list"} onClick={() => changeView("list")}>Daftar</button>
           <button aria-pressed={view === "grid"} onClick={() => changeView("grid")}>Galeri</button>
+        </div>
         </div>
       </div>
 
@@ -438,6 +441,15 @@ function SearchPanel({
         );
       })}
     </div>
+  );
+}
+
+function RefreshGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M20 11a8 8 0 1 0-2.3 5.7" />
+      <path d="M20 5v6h-6" />
+    </svg>
   );
 }
 

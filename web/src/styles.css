@@ -1077,33 +1077,82 @@ a.filecard:hover { border-color: var(--line); background: var(--bg-2); text-deco
   color: var(--ink-3); font-size: var(--text-xs);
 }
 .tree-fail button { height: 24px; padding: 0 8px; font-size: var(--text-xs); }
-.tree-scrim { display: none; }
+.toolbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.toolbar-actions .btn { gap: 6px; }
+@media (max-width: 640px) {
+  /* One scrollable row beats three ragged wrapped rows on a phone. */
+  .toolbar-actions {
+    flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+    width: 100%; padding-bottom: 2px;
+  }
+  .toolbar-actions::-webkit-scrollbar { display: none; }
+  .toolbar-actions > * { flex: none; }
+}
+
+/* Sheet chrome only exists on phones; the desktop sidebar keeps the old look. */
+.sheet-head { display: none; }
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); border: 0; }
 
 @media (max-width: 640px) {
   .tree-toggle { display: inline-flex; }
+
+  /* Bottom sheet instead of a side panel: reachable with a thumb, and it never
+     covers the header. Closed state sits fully below the fold. */
   .treebar {
-    position: fixed; inset: 64px auto 0 0; width: min(80vw, 300px);
+    position: fixed; inset: auto 0 0 0; left: 0; right: 0;
+    width: 100%; max-width: none;
+    max-height: 85dvh;
     background: var(--bg-1);
-    box-shadow: 0 0 0 1px var(--line-soft);
-    transform: translateX(-105%);
-    transition: transform 0.18s ease;
+    border-top: 1px solid var(--line);
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.55);
+    transform: translateY(101%);
+    transition: transform 0.24s cubic-bezier(0.32, 0.72, 0, 1);
     z-index: 45;
+    padding-bottom: env(safe-area-inset-bottom);
   }
-  .treebar.open { transform: translateX(0); }
-  .treebar { max-height: calc(100dvh - 64px); }
-  .tree-scrim {
-    display: block; position: fixed; inset: 0;
-    background: rgba(0, 0, 0, 0.4); z-index: -1;
-  }
-  .foldertree {
-    position: static; width: 100%; flex: 1; min-height: 0; max-height: none; overflow-y: auto;
-    margin-right: 0; padding: 12px 12px 24px;
-  }
-  .tree-nav {
-    width: 100%; margin-right: 0; padding: 12px 12px 12px;
+  .treebar.open { transform: translateY(0); }
+
+  .sheet-head {
+    display: flex; align-items: center; gap: 10px;
+    position: sticky; top: 0; z-index: 2;
+    padding: 10px 12px 8px;
+    background: var(--bg-1);
     border-bottom: 1px solid var(--line-soft);
   }
+  .sheet-grip {
+    width: 40px; height: 4px; border-radius: 999px;
+    background: var(--line); flex: none;
+  }
+  .sheet-title { font-size: var(--text-sm); font-weight: 600; color: var(--ink-2); }
+  .sheet-close {
+    margin-left: auto; width: 40px; height: 40px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--line); border-radius: 50%;
+    background: var(--bg-2); color: var(--ink-1); cursor: pointer;
+  }
+  .sheet-close:active { background: var(--primary-dim); }
+
+  .tree-scrim {
+    display: block; position: fixed; inset: 0;
+    background: rgba(0, 0, 0, 0.55); z-index: 0;
+  }
+  /* Content must sit above the scrim, which shares the sheet's own stacking
+     context; without this the scrim swallows taps on the close button. */
+  .treebar > *:not(.tree-scrim) { position: relative; z-index: 1; }
+  .foldertree {
+    position: static; width: 100%; flex: 1; min-height: 0; max-height: none; overflow-y: auto;
+    margin-right: 0; padding: 8px 12px 20px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .tree-nav {
+    width: 100%; margin-right: 0; padding: 12px 12px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  /* Finger-sized rows; 28px was unusable on a phone. */
+  .tree-row { min-height: 48px; }
+  .tree-label { min-height: 48px; display: inline-flex; align-items: center; }
+  .tree-chev { width: 40px; height: 48px; }
   .treebar .tree-scrim { display: block; }
 }
 
