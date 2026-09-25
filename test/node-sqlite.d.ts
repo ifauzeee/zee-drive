@@ -10,3 +10,14 @@ declare module "node:sqlite" {
     get(...params: unknown[]): unknown;
   }
 }
+
+// Vite asset queries used by the web bundle (vite/client is not in tsconfig
+// types, so the ?raw and ?url imports the Plyr sprite needs are declared here).
+declare module "*?raw" {
+  const src: string;
+  export default src;
+}
+declare module "*?url" {
+  const src: string;
+  export default src;
+}

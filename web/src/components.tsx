@@ -369,7 +369,9 @@ export function MediaPlayer({
       captions: { active: true, language: "auto", update: true },
       speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
       resetOnEnd: true,
-      loadSprite: false,
+      // Same-host sprite from web/public. Plyr's default is cdn.plyr.io, which
+      // left every control iconless whenever that CDN was unreachable.
+      iconUrl: "/plyr.svg",
       clickToPlay: true,
       hideControls: false,
       tooltips: { controls: true, seek: true },

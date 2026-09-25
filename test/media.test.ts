@@ -1,9 +1,30 @@
 import { describe, expect, it } from "vitest";
+import sprite from "../web/public/plyr.svg?raw";
 import type { DriveFile } from "../web/src/types";
 import { baseName, formatTime, isBrowserPlayable, pickSubtitle, resumeAt } from "../web/src/media";
 
 const file = (name: string, over: Partial<DriveFile> = {}): DriveFile =>
   ({ id: name, name, mimeType: "application/octet-stream", ...over }) as DriveFile;
+
+describe("plyr icon sprite", () => {
+  // The player points iconUrl at the sprite committed in web/public instead of
+  // cdn.plyr.io: a blocked or slow CDN left every control without an icon, and
+  // the same-host sprite is also precached by the PWA. This guards that the
+  // file Plyr references still carries the symbols its controls need.
+  it("ships every symbol the default control set needs", () => {
+    const svg = String(sprite);
+    for (const id of [
+      "plyr-play",
+      "plyr-pause",
+      "plyr-volume",
+      "plyr-enter-fullscreen",
+      "plyr-captions-on",
+      "plyr-settings",
+    ]) {
+      expect(svg).toContain(`id="${id}"`);
+    }
+  });
+});
 
 describe("isBrowserPlayable", () => {
   it("accepts the containers browsers can decode", () => {
