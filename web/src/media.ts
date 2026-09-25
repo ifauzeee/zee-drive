@@ -63,6 +63,15 @@ export function resumeAt(seconds: number): number {
 
 const RESUME_KEY = "zee:resume";
 
+// Chrome's PDF viewer inside an iframe renders pages at a fixed width, which
+// looked cut off on phones. FitH plus a visible toolbar makes it match the frame.
+export function pdfViewerSrc(url: string): string {
+  if (!url) return url;
+  const [base, fragment] = url.split("#");
+  const hint = "view=FitH&toolbar=1";
+  return fragment ? `${base}#${hint}&${fragment}` : `${base}#${hint}`;
+}
+
 export function readResume(fileId: string): number {
   try {
     const raw = localStorage.getItem(RESUME_KEY);

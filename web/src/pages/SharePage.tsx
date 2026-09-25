@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ApiError, api, formatBytes, formatDate, kindOf } from "../api";
 import type { Crumb, DriveFile } from "../types";
-import { FileBadge, MediaPlayer, Notice } from "../components";
+import { FileBadge, MediaPlayer, Notice, PdfPreview } from "../components";
 
 type Meta = {
   kind: "file" | "folder";
@@ -147,8 +147,8 @@ function FileShare({ token, meta }: { token: string; meta: Meta }) {
         </a>
       ) : null}
       {kind === "pdf" ? (
-        <div className="preview-pdf" style={{ marginBottom: 16 }}>
-          <iframe src={fileUrl} title={file.name} />
+        <div style={{ marginBottom: 16 }}>
+          <PdfPreview src={fileUrl} name={file.name} downloadHref={`${fileUrl}?dl=1`} />
         </div>
       ) : null}
       <a className="btn primary" href={`${fileUrl}?dl=1`} style={{ fontSize: 16, padding: "12px 28px" }}>

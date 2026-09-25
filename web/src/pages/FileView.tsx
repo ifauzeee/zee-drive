@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, api, formatBytes, formatDate, kindOf } from "../api";
 import type { DriveFile, LockInfo } from "../types";
-import { FileBadge, FileCard, ImageLightbox, MediaPlayer, Notice, copyText } from "../components";
+import { FileBadge, FileCard, ImageLightbox, MediaPlayer, Notice, PdfPreview, copyText } from "../components";
 import { isBrowserPlayable, pickSubtitle } from "../media";
 import { UnlockGate } from "./Browse";
 import { navigate } from "../nav";
@@ -176,9 +176,7 @@ export default function FileView({ fileId }: { fileId: string }) {
       />
     </button>
   ) : kind === "pdf" ? (
-    <div className="preview-pdf">
-      <iframe src={pvUrl} title={file.name} onLoad={(e) => (e.currentTarget.style.height = "100%")} />
-    </div>
+    <PdfPreview src={pvUrl} name={file.name} downloadHref={dlUrl} />
   ) : kind === "code" ? (
     <TextPreview url={pvUrl} name={file.name} />
   ) : (

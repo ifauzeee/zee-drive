@@ -1,7 +1,7 @@
 import { Component, createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import Plyr from "plyr";
 import { formatBytes, kindOf } from "./api";
-import { clearResume, formatTime, readResume, writeResume } from "./media";
+import { clearResume, formatTime, pdfViewerSrc, readResume, writeResume } from "./media";
 import { navigate } from "./nav";
 import type { DriveFile } from "./types";
 
@@ -462,6 +462,36 @@ export function MediaPlayer({
     );
   }
   return <audio ref={(el) => setEl(el)} src={src} preload={preload} />;
+}
+
+/* ---------- PdfPreview ---------- */
+// The browser PDF viewer gives no way out when it fails to render (phone
+// quirks, a half-uploaded Drive file): the user just saw an empty grey box and
+// ended up hunting for a download. The bar below the frame is always there.
+export function PdfPreview({
+  src,
+  name,
+  downloadHref,
+}: {
+  src: string;
+  name: string;
+  downloadHref: string;
+}) {
+  return (
+    <div className="preview-pdf">
+      <iframe src={pdfViewerSrc(src)} title={name} />
+      <div className="preview-pdf-bar">
+        <span className="preview-pdf-label">Pratinjau PDF</span>
+        <span className="grow" />
+        <a className="btn tiny" href={src} target="_blank" rel="noreferrer">
+          Buka di tab baru
+        </a>
+        <a className="btn tiny" href={downloadHref} download>
+          Unduh
+        </a>
+      </div>
+    </div>
+  );
 }
 
 /* ---------- ShortcutHelp ---------- */

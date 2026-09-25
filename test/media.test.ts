@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import sprite from "../web/public/plyr.svg?raw";
 import type { DriveFile } from "../web/src/types";
-import { baseName, formatTime, isBrowserPlayable, pickSubtitle, resumeAt } from "../web/src/media";
+import { baseName, formatTime, isBrowserPlayable, pdfViewerSrc, pickSubtitle, resumeAt } from "../web/src/media";
 
 const file = (name: string, over: Partial<DriveFile> = {}): DriveFile =>
   ({ id: name, name, mimeType: "application/octet-stream", ...over }) as DriveFile;
@@ -23,6 +23,24 @@ describe("plyr icon sprite", () => {
     ]) {
       expect(svg).toContain(`id="${id}"`);
     }
+  });
+});
+
+describe("pdfViewerSrc", () => {
+  it("asks the viewer to fit the page width so phones do not clip it", () => {
+    expect(pdfViewerSrc("/p/abc")).toBe("/p/abc#view=FitH&toolbar=1");
+  });
+
+  it("keeps an existing query string intact", () => {
+    expect(pdfViewerSrc("/s/tok?id=xyz")).toBe("/s/tok?id=xyz#view=FitH&toolbar=1");
+  });
+
+  it("does not stack fragments when one is already present", () => {
+    expect(pdfViewerSrc("/p/abc#page=2")).toBe("/p/abc#view=FitH&toolbar=1&page=2");
+  });
+
+  it("leaves an empty src alone instead of producing a bare fragment", () => {
+    expect(pdfViewerSrc("")).toBe("");
   });
 });
 
